@@ -17,8 +17,10 @@ setup(
         'pandas',
         'scipy',
         'mpmath',
+        'numba',
         'pandarallel',
         'diskcache',
+        'loguru',
     ],
 
     classifiers=[
