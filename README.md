@@ -10,6 +10,10 @@ https://arxiv.org/abs/2405.04693
 
 See the test cases for usage examples.
 
+This package is developed under linux/ubuntu.
+The 'pandarallel' package is used for multicore processing when an array is sent to the 'pdf' or 'cdf' functions.
+This part of implementation may not work for a non-linux platform. Please be aware.
+
 ## Install
 
 There is no plan to set up pypi yet. 
