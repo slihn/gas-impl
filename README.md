@@ -14,7 +14,7 @@ This package is developed under linux/ubuntu.
 The 'pandarallel' package is used for multicore processing when an array is sent to the 'pdf' or 'cdf' functions.
 This part of implementation may not work for a non-linux platform. Please be aware.
 
-## Install
+## Installation
 
 There is no plan to set up pypi yet. 
 
@@ -30,6 +30,13 @@ Then run:
 ```bash
 cd /path-to/gas-impl
 pip install -e .
+```
+
+You can run the test cases to make sure everything is working in your platform:
+
+```bash
+cd /path-to/gas-impl
+pytest
 ```
 
 

@@ -10,13 +10,14 @@ import inspect
 from collections import OrderedDict
 from typing import List
 
-from numba import jit
 
 from .stable_count_dist import gsc_mu_by_f, gen_stable_count
 from .fcm_dist import frac_chi_mean, fcm_mu_by_f, fcm_inverse, fcm_inverse_mu_by_f, fcm_moment
 from .gas_dist import gsas, gsas_moment, levy_stable_from_feller
 from .gexppow_dist import gexppow
 
+
+# These classes are slow, for demo purpose only
 
 class RV_Simulator:
     def __init__(self, mu_fn, num_years, vol=0.85, s_prec=2, is_ratio=True):

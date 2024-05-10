@@ -16,6 +16,11 @@ from pyro.contrib.examples.finance import load_snp500
 from adp_tf.jubilee.vix import VIX  # TODO fix this
 from adp_tf.jubilee.spx import SPX  # TODO fix this
 
+# Plan:
+# VIX data can be downloaded entirely from FRED
+# SPX data can be downloaded from FRED, then joined from pyro for the older dates
+
+
 from .fcm_dist import frac_chi_mean 
 from .gas_dist import gsas, gsas_moment, gsas_kurtosis
 from .multivariate import Multivariate_GSaS, Multivariate_GSaS_2D, _calc_rho

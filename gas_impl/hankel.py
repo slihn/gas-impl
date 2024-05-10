@@ -5,6 +5,7 @@ import pandas as pd
 import mpmath as mp
 from numba import njit, prange
 
+# TODO want to use numba to speed things up, but not quite work yet
 
 two_pi_i = 2j * np.pi
 
