@@ -18,11 +18,12 @@ from .fcm_dist import frac_chi_mean
 
 
 # --------------------------------------------------------------------------------
-def gsas_moment(n: float, alpha: float, k: float) -> float:
-    assert float(int(n)) == float(n)
-    if n % 2 != 0: return 0.0  # odd moments are zero
-    assert k != 0
+def gsas_moment(n: float, alpha: float, k: float, half=False) -> float:
+    if not half:
+        assert float(int(n)) == float(n)
+        if n % 2 != 0: return 0.0  # odd moments are zero
 
+    assert k != 0
     n = mp.mpf(n)
     k = mp.mpf(k)
     alpha = mp.mpf(alpha)
