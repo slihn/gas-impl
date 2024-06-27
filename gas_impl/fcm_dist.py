@@ -98,7 +98,7 @@ def fcm_inverse_mu_by_f(x, dz_ratio, alpha, k):
 
 
 @lru_cache(maxsize=100)
-def frac_chi_mean(alpha, k):
+def frac_chi_mean(alpha, k, loc=0.0, scale=1.0):
     alpha = float(alpha)
     k = float(k)
     k_sign = np.sign(k)  # type: ignore
@@ -110,13 +110,13 @@ def frac_chi_mean(alpha, k):
     # TODO
     # gen_stable_count(alpha=alpha/2, sigma=k_sigma**(-k_sign), d=d, p = alpha*k_sign)
 
-    if k > 0:  return gen_stable_count(alpha=alpha/2, sigma=sigma, d=k-1, p = alpha)
-    if k < 0:  return gen_stable_count(alpha=alpha/2, sigma=1/sigma, d=k, p = -alpha)
+    if k > 0:  return gen_stable_count(alpha=alpha/2, sigma=sigma, d=k-1, p = alpha, loc=loc, scale=scale)
+    if k < 0:  return gen_stable_count(alpha=alpha/2, sigma=1/sigma, d=k, p = -alpha, loc=loc, scale=scale)
     raise Exception(f"ERROR: k is not handled properly")
 
 
 # alias, make it simple
-def fcm(alpha, k):  return frac_chi_mean(alpha, k)
+def fcm(alpha, k, loc=0.0, scale=1.0):  return frac_chi_mean(alpha, k, loc=loc, scale=scale)
 
 
 def fcm_inverse(alpha, k):
