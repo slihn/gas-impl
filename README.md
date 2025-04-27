@@ -12,22 +12,23 @@ As of April 2025, the book is in early draft format. More detail will be filled 
 This package provides the reference implementation for all the distributions mentioned in the book.
 See the test cases for usage examples. Every function is tested in at least one test cases.
 
+To showcase how good the fits are, two univariate fits on VIX and SPX return distributions are presented below:
+<table>
+<tr>
+<td> <img src="docs/plot_vix_gas_sn.png"> </td>
+<td> <img src="docs/plot_spx_gas_sn.png"> </td>
+<tr>
+</table>
 
-![VIX Fit](docs/plot_vix_gas_sn.png)
-
-![SPX Fit](docs/plot_spx_gas_sn.png)
+The bivariate VIX-SPX data set is fitted with the bivariate elliptical distribution, as shown below:
 
 ![VIX-SPX Elliptical Fit](docs/plot_elliptical_vix_spx.png)
 
 
-My previous 2024 paper is located at
+My previous 2024 paper that laid the foundation is located at
 
 https://arxiv.org/abs/2405.04693
 
-
-This package is developed under linux/ubuntu.
-The 'pandarallel' package is used for multicore processing when an array is sent to the 'pdf' or 'cdf' functions.
-This part of implementation may not work for a non-linux platform. Please be aware.
 
 ## Installation
 
@@ -54,6 +55,9 @@ cd /path-to/gas-impl
 pytest
 ```
 
+This package is developed under linux/ubuntu.
+The 'pandarallel' package is used for multicore processing when an array is sent to the 'pdf' or 'cdf' functions.
+This part of implementation may not work for a non-linux platform. Please be aware.
 
 ## Example
 
