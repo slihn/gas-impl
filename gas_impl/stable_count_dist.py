@@ -3,14 +3,17 @@ import pandas as pd
 import mpmath as mp
 from functools import lru_cache
 from scipy.stats import rv_continuous, levy_stable, gengamma
-from scipy.special import gamma
+from scipy.special import gamma, loggamma
 from scipy.special import sici 
 from scipy.integrate import quad, quadrature
 from pandarallel import pandarallel  # type: ignore
 
 pandarallel.initialize(verbose=1)
 
-from .wright import wright_fn, mainardi_wright_fn, mainardi_wright_fn_slope, mp_gamma
+from .wright import wright_fn, mainardi_wright_fn, mainardi_wright_fn_slope, mp_gamma, levy_stable_extremal
+from .frac_gamma import frac_gamma_star
+from .utils import OneSided_RVS
+
 
 # pyright: reportGeneralTypeIssues=false
 
@@ -41,12 +44,6 @@ def stable_count_moment(n, alpha):
     return gamma((n+1)/alpha) / gamma(n+1) / gamma(1/alpha)
 
 
-def levy_stable_one_sided(alpha):
-    assert 0 < alpha <= 1.0
-    scale = np.power(np.cos(alpha * np.pi / 2.0), 1.0/alpha)
-    return levy_stable(alpha, beta=1, loc=0, scale=scale)
-
-
 # https://github.com/scipy/scipy/blob/v1.8.0/scipy/stats/_continuous_distns.py
 # above URL contains many examples how real distributions are implemented
 
@@ -62,7 +59,7 @@ class stable_count_gen(rv_continuous):
     @staticmethod
     @lru_cache(maxsize=100)
     def rv_stable_one_sided(alpha):
-        return levy_stable_one_sided(alpha)
+        return levy_stable_extremal(alpha)
 
     def _munp(self, n, alpha, *args, **kwargs):
         # https://github.com/scipy/scipy/issues/13582
@@ -107,7 +104,14 @@ def wright_f_fn_by_sc(x, alpha: float):
 #
 def gsc_normalization_constant(alpha, sigma, d, p):
     # Def 1, take it out so we can test more easily
-    return abs(p)  / sigma * gamma(d*alpha/p) / gamma(d/p) if d != 0.0 else abs(p) / alpha / sigma
+    assert alpha > 0, f"ERROR: alpha={alpha} must be positive, 0 has to be handled elsewhere"
+    c = abs(p)  / sigma
+    return c * gamma(d*alpha/p) / gamma(d/p) if d != 0.0 else c / alpha
+
+def gsc_log_normalization_constant(alpha, log_sigma, d, p):
+    assert alpha > 0, f"ERROR: alpha={alpha} must be positive, 0 has to be handled elsewhere"
+    log_c = np.log(abs(p)) - log_sigma
+    return log_c + loggamma(d*alpha/p) - loggamma(d/p) if d != 0.0 else log_c - np.log(alpha)
 
 
 def gsc_moment(n, alpha, sigma, d, p):
@@ -128,6 +132,19 @@ def gsc_moment(n, alpha, sigma, d, p):
         alpha_term = (d+n)/d / mp_gamma(d/p) if d != 0 else n/p
     mnt = mp.power(sigma,n) * mp_gamma((d+n)/p) * alpha_term
     return float(mnt)
+
+
+def gsc_mellin_transform(s, alpha: float, sigma: float, d: float, p: float):
+    if alpha != 0:
+        if d != 0:
+            alpha_term = gamma(d/p*alpha)  / gamma(d/p)  / gamma((s+d-1.0)/p*alpha)
+        else:
+            alpha_term = 1.0 / alpha / gamma((s-1.0)/p*alpha)
+    else:
+        # alpha = 0
+        alpha_term = (s+d-1.0)/d / gamma(d/p) if d != 0 else (s-1.0)/p  # alpha = d = 0
+
+    return gamma((s+d-1.0)/p) * sigma**(s-1.0) * alpha_term
 
 
 # ----------------------------------------------------
@@ -209,12 +226,12 @@ class generalized_stable_count_gen(rv_continuous):
     @staticmethod
     @lru_cache(maxsize=100)
     def rv_stable_one_sided(alpha):
-        return levy_stable_one_sided(alpha)
+        return levy_stable_extremal(alpha)
 
     def _pdf(self, x, alpha, sigma, d, p, *args, **kwargs):
         # handle array form
         if not isinstance(alpha, float):
-            assert len(alpha) == len(x), f"ERROR: len of alpha and x"
+            assert len(alpha) == len(x), f"ERROR: len of alpha and x: {len(alpha)} != {len(x)}"
             if len(x) == 1:  # trvial case
                 return self._pdf(x[0], alpha=alpha[0], sigma=sigma[0], d=d[0], p=p[0])
             
@@ -234,11 +251,19 @@ class generalized_stable_count_gen(rv_continuous):
         x_pow = (x / sigma) ** (d-1)
         if alpha != 0.0:
             C = gsc_normalization_constant(alpha, sigma, d, p)
-
             x_pow = (x / sigma) ** (d-1)
-            rv_sc = self.stable_count(alpha)
-            nu = (x / sigma) ** (p/alpha) 
-            sc = gamma(1.0/alpha+1) * rv_sc.pdf(nu)
+            
+            # (a) F_alpha(nu) approach, much easier to compare to _logpdf
+            rv_f = self.rv_stable_one_sided(alpha)
+            nu = (x / sigma)**p 
+            y = nu**(-1.0/alpha)
+            sc = rv_f.pdf(y) * y  # type: ignore
+
+            # (b) stable count approach
+            # rv_sc = self.stable_count(alpha)
+            # nu = (x / sigma) ** (p/alpha) 
+            # sc = gamma(1.0/alpha+1) * rv_sc.pdf(nu)
+            
             return C * x_pow * sc
         else:
             # this is just generalized gamma: gengamma(a=(d+p)/p, c=p, scale=sigma)
@@ -248,12 +273,37 @@ class generalized_stable_count_gen(rv_continuous):
             z = (x / sigma) ** p 
             return C * x_pow * np.exp(-z) 
 
+    def _cdf(self, x, alpha, sigma, d, p, *args, **kwargs):
+        # handle array form
+        if not isinstance(alpha, float):
+            if len(alpha) == 1 and len(x) > 1:
+                n = len(x)
+                return self._cdf(x, alpha=np.repeat(alpha,n), sigma=np.repeat(sigma,n), d=np.repeat(d,n), p=np.repeat(p,n))
+            assert len(alpha) == len(x), f"ERROR: len of alpha and x mismatch: {len(alpha)} != {len(x)}"
+            if len(x) == 1:  # trvial case
+                return self._cdf(x[0], alpha=alpha[0], sigma=sigma[0], d=d[0], p=p[0])
+            
+            df = pd.DataFrame(data={'x': x, 'alpha': alpha, 'sigma': sigma, 'd': d, 'p': p})
+            df['cdf'] = df.parallel_apply(lambda row: self._cdf(row['x'], alpha=row['alpha'], sigma=row['sigma'], d=row['d'], p=row['p']), axis=1)
+            return df['cdf'].tolist()
+
+        # ---------------------
+        assert isinstance(x, float)
+        # s2 = d/(2*p) + 0.5 
+        # sigma2 = sigma * 2**(1/p)
+        # x2 = (x/sigma2)**(2*p) 
+        # return frac_gamma_inc(s2, x2, alpha)
+        
+        z = x / sigma
+        return z**(d + p) * frac_gamma_star(d/p+1, z**p, alpha=alpha)
+
     def _argcheck(self, *args, **kwargs):
         # Customize the argument checking here
         alpha = args[0]
         sigma = args[1]
         d = args[2]
         p = args[3]
+
         return (
             alpha >= 0  # Allow alpha to be zero or positive
             and abs(d) >= 0  # for IG, d can be negative
@@ -275,12 +325,34 @@ class generalized_stable_count_gen(rv_continuous):
         else:
             return gsc_moment(n, alpha, sigma, d, p)
 
+    def _rvs(self, alpha, sigma, d, p, *args, **kwargs):
+        size = kwargs.get('size', 1)
+        alpha = float(alpha)
+        sigma = float(sigma)
+        d = float(d)
+        p = float(p)
+
+        m1 = self._munp(1, alpha, sigma, d, p)
+        m2 = self._munp(2, alpha, sigma, d, p)
+        sd = np.sqrt(m2 - m1**2)
+        cdf_fn = lambda x: self._cdf(x, alpha=alpha, sigma=sigma, d=d, p=p)
+        return OneSided_RVS(mean=m1, sd=sd, cdf_fn=cdf_fn).rvs(size)
+
 
 gen_stable_count = generalized_stable_count_gen(name="generalized stable count", a=0, shapes="alpha, sigma, d, p")
+
+
+def mainardi_wright_fn_in_gsc(alpha: float, scale: float = 1.0):
+    # this is treating the mainardi function as the pdf of a distribution
+    # among other things, this can be used to get the CDF of the distribution
+    # but this is quite slow for large scale usage !!!
+    return gen_stable_count(alpha=alpha, sigma=1.0, d=0.0, p=1.0, scale=scale)
+
 
 # -----------------------------------
 # constructors of known distributions
 # -----------------------------------
+
 
 class stable_vol_gen(rv_continuous):
 

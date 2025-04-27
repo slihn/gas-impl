@@ -18,15 +18,15 @@ from adp_tf.jubilee.vix import VIX
 from adp_tf.jubilee.spx import SPX
 from adp_tf.stable_count.fcm_dist import frac_chi_mean 
 
-from .gas_dist import gsas, gsas_moment, gsas_kurtosis
-from .multivariate import Multivariate_GSaS, Multivariate_GSaS_Adp_2D, _calc_rho
+from .gas_dist import gas_sn
+from .multivariate_sn import Multivariate_GAS_SN, Multivariate_GAS_SN_Adp_2D, _calc_rho
 
 
 # -----------------------------------------------------------
 cache = FanoutCache(size_limit=30*1000000)
 #
-@cache.memoize(typed=True, expire=7*86400, tag='mgsas_spx_vix')
-def _mgsas_get_pdf1(g, x):
+@cache.memoize(typed=True, expire=7*86400, tag='mgas_spx_vix')
+def _mgas_get_pdf1(g, x):
     assert len(x) == g.n
     assert isinstance(x[0], float)
     return g.pdf(list(x))
@@ -143,31 +143,37 @@ class SPX_VIX_Data:
 # --------------------------------------------------------------------
 # models
 model_config = { # third iteration, kurtosis is spot on, use full sample
-    'gsas1': {
+    'gas1': {
         'alpha': [0.64, 0.875],
         'k':     [5.5,  3.202],
+        'beta':  [0.0, 0.0],
     },
-    'gsas2': {  # second interation
+    'gas2': {  # second interation
         'alpha': [0.84, 0.62],
         'k':     [4.75, 5.50],
+        'beta':  [0.0, 0.0],
     },
-    'gsas3': {  # first itereation
+    'gas3': {  # first itereation
         'alpha': [0.75, 0.65],
         'k':     [5.50, 5.00],
+        'beta':  [0.0, 0.0],
     },
     'gep1': {  # second iteration
         'alpha': [0.75, 0.62],
         'k':     [-4.30, -3.40],
+        'beta':  [0.0, 0.0],
     },
     'gep2': {  # first shot
         'alpha': [0.75, 0.62],
         'k':     [-4.30, -3.40],
+        'beta':  [0.0, 0.0],
     },
 }
 
+
 # --------------------------------------------------------------------
 class SPX_VIX_Marginal_Dist:
-    def __init__(self, data_obj: SPX_VIX_Data, length=40, model_name='gsas1'):
+    def __init__(self, data_obj: SPX_VIX_Data, length=40, model_name='gas1'):
         self.data_obj: SPX_VIX_Data = data_obj
         self.cov = self.data_obj.cov
         self.rho = self.data_obj.rho
@@ -181,26 +187,29 @@ class SPX_VIX_Marginal_Dist:
         assert isinstance(self.model, Dict)
         self.alpha = self.model['alpha']
         self.k     = self.model['k']
+        self.beta  = self.model['beta']
 
-        self.gsas_unit = [ gsas(alpha=self.alpha[i], k=self.k[i]) for i in range(self.n) ] 
-        self.gsas_sd = [ gsas(alpha=self.alpha[i], k=self.k[i], scale=self.cov[i,i]**0.5 * self.gsas_rescale(i)) for i in range(self.n) ] 
-        self.gsas_pdf = [ self.create_1d_pdf_df(i) for i in range(self.n) ] 
-        self.gsas_kurtosis = [ gsas_kurtosis(self.alpha[i], self.k[i]) for i in range(self.n) ] 
+        self.gas_unit = [ gas_sn(alpha=self.alpha[i], k=self.k[i], beta=self.beta[i]) for i in range(self.n) ] 
+        self.gas_sd = [ gas_sn(alpha=self.alpha[i], k=self.k[i], beta=self.beta[i], scale=self.cov[i,i]**0.5 * self.gas_rescale(i)) for i in range(self.n) ] 
+        self.gas_pdf = [ self.create_1d_pdf_df(i) for i in range(self.n) ] 
+        self.gas_kurtosis = [ gas_sn(self.alpha[i], self.k[i], self.beta[i]).stats('k') for i in range(self.n) ] 
 
         # assertion
         for i in range(self.n):
-            p1 = self.gsas_sd[i].moment(2)
+            p1 = self.gas_sd[i].stats('v')
             p2 = self.cov[i,i]
             assert abs(p1/p2 - 1.0) < 1e-3
 
         # --------------------------------------------------------------------
         self.ell_alpha = sum(self.alpha)/2
         self.ell_k = sum(self.k)/2
-        self.ell_gsas = self.find_ell_adjusted_instance()
-        self.ell_gsas_marginal = [ self.ell_gsas.marginal_1d_rv(i) for i in range(self.n) ] 
+        self.ell_beta = self.beta
 
-        self.adp_gsas = self.find_adp_adjusted_instance()
-        self.adp_gsas_marginal = [ self.adp_gsas.marginal_1d_rv(i) for i in range(self.n) ] 
+        self.ell_gas = self.find_ell_adjusted_instance()
+        self.ell_gas_marginal = [ self.ell_gas.marginal_1d_rv(i) for i in range(self.n) ]   # TODO this is undefined yet
+
+        self.adp_gas = self.find_adp_adjusted_instance()
+        self.adp_gas_marginal = [ self.adp_gas.marginal_1d_rv(i) for i in range(self.n) ]   # TODO this is undefined yet
         print(f"mv adj factor: ell = {self.ell_adj_factor}, adp = {self.adp_adj_factor}")
 
         # --------------------------------------------------------------------
@@ -220,26 +229,27 @@ class SPX_VIX_Marginal_Dist:
         self.mv_pdf_df = pd.DataFrame(data = [{'i0': i0, 'i1': i1, 'xs': self.grid_pos[i0,i1]} for i0 in range(n0) for i1 in range(n1)])
 
     @property
-    def ell_cov(self):  return self.ell_gsas.cov
+    def ell_cov(self):  return self.ell_gas.cov
     
     @property
-    def ell_rho(self):  return self.ell_gsas.rho
+    def ell_rho(self):  return self.ell_gas.rho
     
     @lru_cache(maxsize=10)
-    def ell_peak_density(self): return float(self.ell_gsas.pdf(self.ell_gsas.x0))  # type: ignore
+    # TODO this is not correct, need to fix
+    def ell_peak_density(self): return float(self.ell_gas.pdf(self.ell_gas.x0))  # type: ignore
 
     @property
-    def adp_cov(self):  return self.adp_gsas.cov
+    def adp_cov(self):  return self.adp_gas.cov
     
     @property
-    def adp_rho(self):  return self.adp_gsas.rho
+    def adp_rho(self):  return self.adp_gas.rho
     
     @lru_cache(maxsize=10)
-    def adp_peak_density(self): return float(self.adp_gsas.pdf(self.adp_gsas.x0))  # type: ignore
+    def adp_peak_density(self): return float(self.adp_gas.pdf(self.adp_gas.x0))  # type: ignore
 
 
     def create_1d_pdf_df(self, n: int):
-        g = self.gsas_sd[n]
+        g = self.gas_sd[n]
         _, bins = self.data_obj.hist1d_density(n)
         df = pd.DataFrame(data={'x': bins})
         df['p1'] = df['x'].parallel_apply(lambda x: g.pdf(x))  # type: ignore
@@ -253,17 +263,18 @@ class SPX_VIX_Marginal_Dist:
         _assert_total_density(df)
         return df
 
-    def gsas_rescale(self, i):
-        return self.gsas_unit[i].moment(2)**(-0.5)
+    def gas_rescale(self, i):
+        return self.gas_unit[i].stats('v')**(-0.5)
 
     def ell_rescale(self):
-        return gsas(self.ell_alpha, self.ell_k).moment(2)**(-0.5)
+        # TODO how to handle beta in ellipical case?
+        return gas_sn(self.ell_alpha, self.ell_k, beta=0.0).stats('v')**(-0.5)
 
     def populate_mv_pdf_df(self, g, col):
         def _pdf1(x):
             assert len(x) == 2
             y = tuple([round(x[0],7), round(x[1],7)])
-            return _mgsas_get_pdf1(g, y)
+            return _mgas_get_pdf1(g, y)
 
         if col in self.mv_pdf_df.columns:
             ix = self.mv_pdf_df.eval(f"{col} > 0")  # okay rows
@@ -295,28 +306,28 @@ class SPX_VIX_Marginal_Dist:
 
     def elliptical_plot(self, ax):
         col = 'ell_pdf'
-        self.populate_mv_pdf_df(self.ell_gsas, col)
+        self.populate_mv_pdf_df(self.ell_gas, col)
         self._mv_contourf_plot(ax, self.get_arr_from_mv_pdf_df(col))
         mx = self.ell_peak_density()
-        ax.set_title(f"2D GSaS Elliptical Contour (rho={self.ell_rho:.2f}, max={int(mx)})")
+        ax.set_title(f"2D GAS-SN Elliptical Contour (rho={self.ell_rho:.2f}, max={int(mx)})")
         ax.text(-0.25, -0.03, f"alpha={self.ell_alpha:.2f} k={self.ell_k:.2f}")
 
     def adaptive_plot(self, ax):
         col = 'adp_pdf'
-        self.populate_mv_pdf_df(self.adp_gsas, col)
+        self.populate_mv_pdf_df(self.adp_gas, col)
         self._mv_contourf_plot(ax, self.get_arr_from_mv_pdf_df(col))
-        mx = _mgsas_get_pdf1(self.adp_gsas, tuple(self.adp_gsas.x0))
-        ax.set_title(f"2D GSaS Adaptive Contour (rho={self.adp_rho:.2f}, max={int(mx)})")
+        mx = _mgas_get_pdf1(self.adp_gas, tuple(self.adp_gas.x0))
+        ax.set_title(f"2D GAS-SN Adaptive Contour (rho={self.adp_rho:.2f}, max={int(mx)})")
 
     # --------------------------------------------------
     def vix_plot(self, ax1, ax2):
         n = 0
-        df1 = self.gsas_pdf[n]
+        df1 = self.gas_pdf[n]
         left_shift = 0.007
         x = df1.x + self.data_obj.mean[n] - left_shift
         
         def _plot_dist(ax):
-            ax.plot(x, df1.p1, color='red', linewidth=1, label='GSaS')
+            ax.plot(x, df1.p1, color='red', linewidth=1, label='GAS-SN')
             # ax.plot(df1.x + df.rtn_vix.mean() - 0.02, df1.p2, color='orange', linewidth=1, label='GAS')  # skewness shifts the mean
             ax.set_xlabel("daily return")
             ax.legend(loc="upper left")
@@ -325,22 +336,22 @@ class SPX_VIX_Marginal_Dist:
         _plot_dist(ax1)
         ax1.set_ylabel("density (in log scale)")
         ax1.set_yscale('log')
-        ax1.set_title("VIX distribution (right skewness, not handled)")
+        ax1.set_title("VIX distribution (right skew)")
         
         self.data_obj.hist1d_plot(ax2, n)
         _plot_dist(ax2)
         ax2.set_ylabel("density")
-        ax2.set_title(f"VIX alpha={self.alpha[n]:.2f} k={self.k[n]:.2f} rescale={self.gsas_rescale(n):.3f}")
-        ax2.text(-0.3, 6.0, f"sample kurtosis={self.data_obj.vix_kurtosis:.1f}\nmodel kurtosis={self.gsas_kurtosis[n]:.1f}")
+        ax2.set_title(f"VIX alpha={self.alpha[n]:.2f} k={self.k[n]:.2f} rescale={self.gas_rescale(n):.3f}")
+        ax2.text(-0.3, 6.0, f"sample kurtosis={self.data_obj.vix_kurtosis:.1f}\nmodel kurtosis={self.gas_kurtosis[n]:.1f}")
         return df1
 
     def spx_plot(self, ax1, ax2):
         n = 1
-        df1 = self.gsas_pdf[n]
+        df1 = self.gas_pdf[n]
         x = df1.x + self.data_obj.mean[n]
 
         def _plot_dist(ax):
-            ax.plot(x, df1.p1, color='red', linewidth=1, label='GSaS')
+            ax.plot(x, df1.p1, color='red', linewidth=1, label='GAS-SN')
             ax.set_xlabel("daily return")
             ax.legend(loc="upper left")
 
@@ -348,20 +359,20 @@ class SPX_VIX_Marginal_Dist:
         _plot_dist(ax1)
         ax1.set_ylabel("density (in log scale)")
         ax1.set_yscale('log')
-        ax1.set_title("SPX distribution (left skewness, not handled)")
+        ax1.set_title("SPX distribution (left skew)")
     
         self.data_obj.hist1d_plot(ax2, n)
         _plot_dist(ax2)
         ax2.set_ylabel("density")
-        ax2.set_title(f"SPX alpha={self.alpha[n]:.2f} k={self.k[n]:.2f} rescale={self.gsas_rescale(n):.3f}")
-        ax2.text(-0.05, 45.0, f"sample kurtosis={self.data_obj.spx_kurtosis:.1f}\nmodel kurtosis={self.gsas_kurtosis[n]:.1f}")
+        ax2.set_title(f"SPX alpha={self.alpha[n]:.2f} k={self.k[n]:.2f} rescale={self.gas_rescale(n):.3f}")
+        ax2.text(-0.05, 45.0, f"sample kurtosis={self.data_obj.spx_kurtosis:.1f}\nmodel kurtosis={self.gas_kurtosis[n]:.1f}")
         return df1
     
     # --------------------------------------------------
     def create_adjusted_cov(self, adj_factor, mv_type):
         assert mv_type in ['ell', 'adp']
-        v0 = (self.cov[0,0] * (1.0 - adj_factor))**0.5 * (self.gsas_rescale(0) if mv_type == 'adp' else self.ell_rescale())
-        v1 = (self.cov[1,1] * (1.0 - adj_factor))**0.5 * (self.gsas_rescale(1) if mv_type == 'adp' else self.ell_rescale())
+        v0 = (self.cov[0,0] * (1.0 - adj_factor))**0.5 * (self.gas_rescale(0) if mv_type == 'adp' else self.ell_rescale())
+        v1 = (self.cov[1,1] * (1.0 - adj_factor))**0.5 * (self.gas_rescale(1) if mv_type == 'adp' else self.ell_rescale())
         rho = self.rho * (1.0 + adj_factor)
         new_cov = np.array([
             [ v0**2, v0*v1*rho ],
@@ -373,13 +384,13 @@ class SPX_VIX_Marginal_Dist:
         return create_mv_fn(self.create_adjusted_cov(adj_factor, mv_type))
 
     def eval_mv_adj_distance(self, adj_factor, create_mv_fn, mv_type):
-        mgsas = self.create_adjusted_mv_instance(adj_factor, create_mv_fn, mv_type)
-        p1 = mgsas.pdf_at_zero()
+        mgas = self.create_adjusted_mv_instance(adj_factor, create_mv_fn, mv_type)
+        p1 = mgas.pdf_at_zero()
         p2 = self.data_obj.hist2d_peak_density() * (1.0 - adj_factor)
         return p1 - p2
 
-    def create_ell_mv_fn(self, cov): return Multivariate_GSaS(cov=cov, alpha=self.ell_alpha, k=self.ell_k)
-    def create_adp_mv_fn(self, cov): return Multivariate_GSaS_Adp_2D(cov=cov, alpha=self.alpha, k=self.k)
+    def create_ell_mv_fn(self, cov): return Multivariate_GAS_SN(cov=cov, alpha=self.ell_alpha, k=self.ell_k, beta=self.ell_beta)
+    def create_adp_mv_fn(self, cov): return Multivariate_GAS_SN_Adp_2D(cov=cov, alpha=self.alpha, k=self.k, beta=self.beta)
 
     def find_ell_adjusted_instance(self):
         mv_fn = lambda cov: self.create_ell_mv_fn(cov)

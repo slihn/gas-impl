@@ -3,12 +3,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from typing import List
+from typing import List, Optional, Callable, Tuple
 from skimage.measure import find_contours
+
+from numpy import meshgrid, isfinite  # type: ignore
 
 
 def get_xy_grid(x1, x2, y1, y2, n):
-    x, y = np.meshgrid(np.linspace(x1, x2, n), np.linspace(y1, y2, n))
+    x, y = meshgrid(np.linspace(x1, x2, n), np.linspace(y1, y2, n))
     return x, y
 
 def get_mesh(x, y, fn, min_cap=-100.0, max_cap=100.0) -> np.ndarray:
@@ -17,9 +19,9 @@ def get_mesh(x, y, fn, min_cap=-100.0, max_cap=100.0) -> np.ndarray:
         for j in range(x.shape[1]):
             p = fn(x[i, j], y[i, j])
             # print('get_mesh:', str(fn), [x[i, j], y[i, j], p])
-            if not np.isfinite(p): 
+            if not isfinite(p):  
                 p = max_cap # if p > 0 else min_cap 
-            z[i, j] = np.clip(p, a_min=min_cap, a_max=max_cap)
+            z[i, j] = np.clip(p, a_min=min_cap, a_max=max_cap)  # type: ignore
 
     return z
 
@@ -66,10 +68,11 @@ class ContourPlotBase:
         self.min_cap = min_cap
         self.max_cap = max_cap
         self.cmap = cmap
-        self.contour_levels: np.ndarray = np.ndarray([])
+        self.contour_levels: np.ndarray = np.ndarray([])  # type: ignore
         self.contour_colors = contour_colors
         self.contour_linewidths = contour_linewidths
         self.cpu: ContourPlotUtil
+        self.mesh_fn: Optional[Callable] = None  # type: ignore
 
     @property
     def z(self): return self.cpu.z
@@ -225,19 +228,21 @@ class CountourSolver:
         self.kurt_fn = kurt_fn
         self.pdf0_fn = pdf0_fn
         
-        self.alpha = None
-        self.k = None 
+        self.alpha: Optional[np.ndarray] = None
+        self.k: Optional[np.ndarray] = None 
 
-        self.kurt_contours = None
-        self.pdf0_contours = None
+        self.kurt_contours: Optional[List] = None
+        self.pdf0_contours: Optional[List] = None
 
     def _eval_point(self, i, j, fn, cap):
+        assert self.alpha is not None
+        assert self.k is not None
         v = fn(self.alpha[i, j], k=self.k[i, j])
-        if not np.isfinite(v): v = cap 
+        if not isfinite(v): v = cap 
         return np.clip(v, a_min=-cap, a_max=cap)
         
     def find_contours(self, debug=False):
-        self.alpha, self.k = np.meshgrid(
+        self.alpha, self.k = meshgrid(  
             np.linspace(self.alpha_min, self.alpha_max, self.points), 
             np.linspace(self.k_min, self.k_max, self.points)
         )
@@ -255,12 +260,14 @@ class CountourSolver:
         print(f"kr_contours found: {len(self.kurt_contours)}; pdf_contours found: {len(self.pdf0_contours)}")
 
     def a_coords(self, contour):
+        assert self.alpha is not None
         return self.alpha[0, contour[:, 1].astype(int)]
     
     def k_coords(self, contour):
+        assert self.k is not None
         return self.k[contour[:, 0].astype(int), 0]
 
-    def _get_idx_of_contours(self, contour, fn, target, tol):
+    def _get_idx_of_contours(self, contour, fn, target, tol) -> Tuple[List, np.ndarray]:
         a_coords = self.a_coords(contour)
         k_coords = self.k_coords(contour)
         arr = np.array([fn(a_coords[i], k=k_coords[i]) for i in np.arange(len(a_coords))])
@@ -277,6 +284,7 @@ class CountourSolver:
         fig, (ax1, ax2) = plt.subplots(1, 2)
 
         label = 'kurt'
+        assert self.kurt_contours is not None
         for contour in self.kurt_contours:
             idx, _ = self._get_idx_of_contours(contour, self.kurt_fn, self.kurt_target, tol=5.0)
             a_coords = self.a_coords(contour)
@@ -285,6 +293,7 @@ class CountourSolver:
             ax2.plot(k_coords[idx], 1/a_coords[idx], color="blue", linewidth=1, label=label)
             label = None  # only show this once
 
+        assert self.pdf0_contours is not None
         for contour in self.pdf0_contours:
             idx, p0 = self._get_idx_of_contours(contour, self.pdf0_fn, self.pdf0_target, tol=0.1)
             a_coords = self.a_coords(contour)

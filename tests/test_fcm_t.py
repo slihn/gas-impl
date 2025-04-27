@@ -1,21 +1,25 @@
 
 # test gsas
 
+from re import X
 import numpy as np
 import pandas as pd
 import mpmath as mp
 from scipy.special import gamma
 from scipy.integrate import quad
 from scipy import stats
-from scipy.stats import levy_stable, chi
+from scipy.stats import chi, chi2, norm
 
-from gas_impl.wright import wright_fn
+from .wright import wright_fn
+from .frac_gamma import frac_gamma_star
 
-from gas_impl.stable_count_dist import gen_stable_count, gsc_normalization_constant, gsc_mu_by_m_series, sv_mu_by_f, gsc_pdf_large_x
-from gas_impl.gas_dist import gsas, lihn_stable, gsas_pdf_at_zero, gsas_moment
-from gas_impl.fcm_dist import fcm_moment, frac_chi_mean, fcm_sigma, fcm_mu_by_f, fcm_inverse_mu_by_f, fcm_q_by_f, fcm_q_by_gsc_q, fcm_pdf_large_x
-from gas_impl.unit_test_utils import *
-from gas_impl.hankel import *
+from .stable_count_dist import gen_stable_count, gsc_normalization_constant, gsc_mu_by_m_series, sv_mu_by_f, gsc_pdf_large_x
+from .gas_dist import gsas, lihn_stable, gsas_pdf_at_zero, gsas_moment
+from .fcm_dist import fcm_moment, frac_chi_mean, FracChiMean, fcm_sigma,\
+    fcm_mu_by_f, fcm_inverse_mu_by_f, fcm_q_by_f, fcm_q_by_gsc_q, fcm_pdf_large_x, fcm_k1_mellin_transform,\
+    frac_chi2_mean
+from .unit_test_utils import *
+from .hankel import *
 
 
 # -------------------------------------------------------------------------------------
@@ -39,18 +43,18 @@ def test_t_equiv():
 class Test_T_PdfAtZero:
     # t_k(0)
     k = 3.0
-    p1 = stats.t(k).pdf(0.0)
+    p1 = stats.t(k).pdf(0.0)  # type: ignore
 
     def test_fn_form(self):
         p2 = gsas_pdf_at_zero(alpha=1.0, k=self.k)
         delta_precise_up_to(self.p1, p2)
 
     def test_gsas(self):
-        p3 = _t_gsas(self.k).pdf(0.0)
+        p3 = _t_gsas(self.k).pdf(0.0)  # type: ignore
         delta_precise_up_to(self.p1, p3)
     
     def test_gas(self):
-        p4 = _t_gas(self.k).pdf(0.0)
+        p4 = _t_gas(self.k).pdf(0.0)  # type: ignore
         delta_precise_up_to(self.p1, p4)
 
 
@@ -72,23 +76,43 @@ class Test_Fractional_Chi1:
     # Section 4.1
     alpha = 0.75
     x = 0.85
-    fcm = lihn_stable.frac_chi_mean(alpha=alpha, k=1.0)
+    fcm = frac_chi_mean(alpha=alpha, k=1.0)
     gsc = gen_stable_count(alpha=alpha/2, sigma=1/np.sqrt(2), d=0.0, p=alpha)
-    wr = 2/x * wright_fn(-(np.sqrt(2)*x)**alpha, -alpha/2, 0)
+    wr = 2/x * wright_fn(-(np.sqrt(2)*x)**alpha, -alpha/2, 0)  # type: ignore
+
+    x_arr = np.linspace(0, 3.5, 100)
 
     def test_chi1_gsc_equiv(self):
         compare_two_rvs(self.x, self.fcm, self.gsc)
 
     def test_wright_equiv(self):
-        delta_precise_up_to(self.wr, self.fcm.pdf(self.x))
+        delta_precise_up_to(self.wr, self.fcm.pdf(self.x))  # type: ignore
+
+    def test_array_call(self):
+        self.fcm.cdf(self.x_arr)
+        self.fcm.pdf(self.x_arr)  # type: ignore
+
+
+class Test_FCM_RVS:
+    fcm = frac_chi_mean(alpha=1.2, k=6.0)
+    x = fcm.rvs(200 * 1000)  # 10 seconds for 200k samples
+     
+    def test_rvs_mean(self):
+        delta_precise_up_to(self.x.mean(), self.fcm.mean(), abstol=0.01, reltol=0.01)
+    
+    def test_rvs_var(self):
+        delta_precise_up_to(self.x.var(), self.fcm.var(), abstol=0.05, reltol=0.01)
 
 
 class Test_FCM_Chi_V1:
     # fcm_{1,k} = chi_k / sqrt(k) 
     k = 3.0
     x = 0.85
-    fcm = lihn_stable.frac_chi_mean(alpha=1.0, k=k)
+    fcm = frac_chi_mean(alpha=1.0, k=k)
     scaled_chi = chi(k, scale=1/np.sqrt(k))
+    
+    fcm2 = frac_chi2_mean(alpha=1.0, k=k)
+    scaled_chi2 = chi2(k, scale=1/k)
 
     def test_equiv(self):
         compare_two_rvs(self.x, self.scaled_chi, self.fcm)
@@ -105,12 +129,18 @@ class Test_FCM_Chi_V1:
             p2 = self.scaled_chi.moment(float(n))
             delta_precise_up_to(p1, p2)
 
+    def test_fcm2_moment(self):
+        for n in [1,2,3,4]:
+            p1 = self.fcm2.moment(float(n))
+            p2 = self.scaled_chi2.moment(float(n))
+            delta_precise_up_to(p1, p2)
+
 
 class Test_FCM_Chi_V2:
     # fcm_{1,k} = chi_k / sqrt(k) 
     k = 8.0
     x = 0.55
-    fcm = lihn_stable.frac_chi_mean(alpha=1.0, k=k)
+    fcm = frac_chi_mean(alpha=1.0, k=k)
     scaled_chi = chi(k, scale=1/np.sqrt(k))
 
     def test_equiv(self):
@@ -123,11 +153,36 @@ class Test_FCM_Chi_V2:
             delta_precise_up_to(p1, p2)
 
 
+class Test_FCM_PDF:
+    alpha = 0.85 
+    k = 2.5
+    f1 = frac_chi_mean(alpha=alpha, k=k)
+    f2 = FracChiMean(alpha=alpha, k=k)
+    
+    def test_pdf(self):
+        x = 0.75
+        p1 = self.f1.pdf(x)  # type: ignore
+        p2 = self.f2.pdf(x)  # type: ignore
+        delta_precise_up_to(p1, p2)
+        
+    def test_pdf_by_wright_f(self):
+        x = 0.65
+        p1 = self.f1.pdf(x)  # type: ignore
+        p2 = self.f2.pdf_by_wright_f(x)
+        delta_precise_up_to(p1, p2)
+
+    def test_pdf_by_mellin(self):
+        x = 0.85
+        p1 = self.f1.pdf(x)  # type: ignore
+        p2 = self.f2.pdf_by_mellin(x)
+        delta_precise_up_to(p1, p2)
+ 
+ 
 # fcm moments
 class Test_FCM_Moments:
     alpha = 0.75 
     k = 2.5
-    fcm = lihn_stable.frac_chi_mean(alpha=alpha, k=k)
+    fcm = frac_chi_mean(alpha=alpha, k=k)
     c_const = gsc_normalization_constant(alpha/2, sigma=1/np.sqrt(2*k), d=k-1, p=alpha)
 
     def mnt(self, n):
@@ -149,7 +204,7 @@ class Test_FCM_Moments:
         for n in [1,2,3,4]:
             m1 = self.mnt(float(n))
 
-            def fn2(x): return x**n * self.fcm.pdf(x)
+            def fn2(x): return x**n * self.fcm.pdf(x)  # type: ignore
             m2 = quad(fn2, a=0.0001, b=np.inf, limit=100000)[0]
             delta_precise_up_to(m1, m2, msg_prefix=f"n={n} ")
 
@@ -190,7 +245,7 @@ class Test_FCM_Mean_LargeK:
 class Test_FCM_Moments_NegK:
     alpha = 0.55  # the smaller alpha, the harder the integral is
     k = -3.5
-    fcm = lihn_stable.frac_chi_mean(alpha=alpha, k=k)
+    fcm = frac_chi_mean(alpha=alpha, k=k)
 
     def mnt(self, n):
         return fcm_moment(n, alpha=self.alpha, k=self.k)
@@ -206,7 +261,7 @@ class Test_FCM_Moments_NegK:
         for n in [1,2,3]:  # n=4 integral is a bit problematic
             m1 = self.mnt(float(n))
 
-            def fn2(x): return x**n * self.fcm.pdf(x)
+            def fn2(x): return x**n * self.fcm.pdf(x)  # type: ignore
             m2 = quad(fn2, a=0.0001, b=np.inf, limit=100000)[0]
             delta_precise_up_to(m1, m2, msg_prefix=f"n={n} ", reltol=0.001)
 
@@ -228,8 +283,8 @@ class Test_FCM_ReflectionRule:
 
     def test_pdf_reflection(self):
         x = 1.5
-        p1 = self.f1.pdf(x)
-        p2 = self.f2.pdf(1/x) / (x**3 * self.m1)
+        p1 = self.f1.pdf(x)  # type: ignore
+        p2 = self.f2.pdf(1/x) / (x**3 * self.m1)  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_moment_reflection(self):
@@ -246,7 +301,7 @@ class Test_FCM_LargeX:
         x = 1.0
         while True:
             assert x > 0.1
-            p1 = frac_chi_mean(alpha=alpha, k=k).pdf(x)
+            p1 = frac_chi_mean(alpha=alpha, k=k).pdf(x)  # type: ignore
             if p1 < 1e-9: 
                 x = x - 0.01
                 continue
@@ -273,20 +328,19 @@ class Test_FCM_LargeX:
         k = 3.5 
 
         p1 = fcm_pdf_large_x(x, 1.0, k)
-        p2 = chi(k, scale=1/np.sqrt(k)).pdf(x)
+        p2 = chi(k, scale=1/np.sqrt(k)).pdf(x)  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def _assert(self, alpha, k, msg, tol=2e-3, x=None):
         if x is None:
             x = self._locate_x(alpha, k)
-        p1 = frac_chi_mean(alpha=alpha, k=k).pdf(x)
+        p1 = frac_chi_mean(alpha=alpha, k=k).pdf(x)  # type: ignore
         p2 = gsc_pdf_large_x(x, alpha/2, fcm_sigma(alpha,k), d=k-1, p=alpha)
         p3 = fcm_pdf_large_x(x, alpha, k)
 
         assert p1 > 1e-10
         delta_precise_up_to(p1, p2, abstol=1e-2, reltol=tol, msg_prefix=msg + 'p1 vs p2')
         delta_precise_up_to(p1, p3, abstol=1e-2, reltol=tol, msg_prefix=msg + 'p1 vs p3')
-
 
 
 # -------------------------------------------------------------------------------------
@@ -296,8 +350,8 @@ def test_fcm_hankel():
     k = 2.5
 
     x = 0.75
-    fcm = lihn_stable.frac_chi_mean(alpha=alpha, k=k)
-    p1 = fcm.pdf(x)
+    fcm = frac_chi_mean(alpha=alpha, k=k)
+    p1 = fcm.pdf(x)  # type: ignore
 
     g = gamma((k-1)/2)
     sigma = fcm_sigma(alpha, k)
@@ -309,7 +363,7 @@ def test_fcm_hankel():
 
     q1 = hankel_integral_mpr(fcm_integrand)  # parallel version
 
-    assert abs(np.imag(q1)) < 1e-8
+    assert abs(np.imag(q1)) < 1e-8  # type: ignore
     delta_precise_up_to(p1, q1, reltol=1e-3)
 
 
@@ -385,3 +439,16 @@ class Test_FCM_Mu_Exp:
         delta_precise_up_to(p1, p2)
         p3 = 1.0 - x**2/2
         delta_precise_up_to(p1, p3)
+
+
+# ---------------------------------------------------------
+# frac_gamma_star related tests
+def test_fcm_cdf_vs_frac_gamma_star():
+    alpha = 0.75 
+    k = 2.5
+
+    x = 0.75
+    p1 = frac_chi_mean(alpha=alpha, k=k).cdf(x)
+    p2 = FracChiMean(alpha=alpha, k=k).cdf_by_gamma_star(x)
+    delta_precise_up_to(p1, p2)
+

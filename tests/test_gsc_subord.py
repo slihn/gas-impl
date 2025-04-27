@@ -4,17 +4,16 @@
 
 import numpy as np
 import pandas as pd
-from numba import njit  # this causes an error: DeprecationWarning: `np.MachAr` is deprecated (NumPy 1.22).
 
 from scipy.special import gamma, erfc
 from scipy.integrate import quad
 from scipy import stats
 from scipy.stats import gengamma, norm, expon, weibull_min, rayleigh, poisson, chi, chi2, invgamma, invweibull
 
-from gas_impl.stable_count_dist import stable_count, gen_stable_count, gsc_normalization_constant, stable_vol
-from gas_impl.wright import wright_fn, mittag_leffler_fn, wright_m_fn
-from gas_impl.hankel import *
-from gas_impl.unit_test_utils import *
+from .stable_count_dist import stable_count, gen_stable_count, gsc_normalization_constant, stable_vol
+from .wright import wright_fn, mittag_leffler_fn, wright_m_fn
+from .hankel import *
+from .unit_test_utils import *
 
 
 def weibull_gsc(df, precise=True):

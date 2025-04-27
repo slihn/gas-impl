@@ -6,11 +6,10 @@ from scipy.stats import rv_continuous
 from scipy.special import gamma
 from scipy.stats import norm
 from scipy.integrate import quad
-import warnings
 
-from .wright import wright_fn
+
 from .stable_count_dist import stable_count
-from .fcm_dist import fcm_sigma
+
 
 def mp_gamma(z):
     if z > 0: return mp.gamma(z) 
@@ -101,8 +100,9 @@ class GSaS_Wright:
         sc = stable_count(alpha=self.alpha/2)
 
         def _kernel(z: float):
-            wright = sc.pdf(z**2) * gamma(2/self.alpha+1)  # use stable count can avoid divergence issue in Wright func
-            return norm().pdf(self.sigma *z*x) * z**(k-1) * wright
+            # use stable count can avoid divergence issue in Wright func
+            wright = sc.pdf(z**2) * gamma(2/self.alpha+1)  # type: ignore
+            return norm().pdf(self.sigma *z*x) * z**(k-1) * wright  # type: ignore
 
         return c * quad(_kernel, a=0.001, b=np.inf, limit=1000)[0]
 
@@ -189,7 +189,7 @@ class GSaS_Wright:
         def _kernel(z):
             g = _gauss_term()  
             z_pow = z ** (2*n + k - 1) 
-            return  g * z_pow * sc.pdf(z**2) * gamma(2/alpha+1)
+            return  g * z_pow * sc.pdf(z**2) * gamma(2/alpha+1)  # type: ignore
 
         return c * quad(_kernel, a=0.001, b=np.inf, limit=1000)[0]
 

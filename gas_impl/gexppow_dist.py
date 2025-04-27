@@ -1,8 +1,9 @@
 import numpy as np 
 import pandas as pd
+from typing import Union, Optional, List
 from scipy.special import erf, gamma
 from scipy.stats import rv_continuous, norm
-from scipy.integrate import quad, IntegrationWarning
+from scipy.integrate import quad
 
 from .fcm_dist import frac_chi_mean, fcm_moment
 
@@ -27,7 +28,7 @@ def gexppow_moment(n: float, alpha: float, k: float):
     return norm().moment(int(n)) * fcm_moment(n+1.0, alpha=alpha, k=k) / fcm_moment(1.0, alpha=alpha, k=k)
 
 
-def gexppow_kurtosis(alpha: float, k: float, fisher: bool=True):
+def gexppow_kurtosis(alpha: Union[float, List], k: float, fisher: bool=True):
     # TODO should have an analytic piece too
     if not isinstance(alpha, float):
         ans = [gexppow_kurtosis(alpha1, k, fisher=fisher) for alpha1 in alpha]
@@ -75,7 +76,7 @@ class gexppow_gen(rv_continuous):
                 return self._pdf(x[0], alpha=alpha[0], k=k[0])
             
             df = pd.DataFrame(data={'x': x, 'alpha': alpha, 'k': k})
-            df['pdf'] = df.parallel_apply(lambda row: self._pdf(row['x'], alpha=row['alpha'], k=row['k']), axis=1)
+            df['pdf'] = df.parallel_apply(lambda row: self._pdf(row['x'], alpha=row['alpha'], k=row['k']), axis=1)  # type: ignore
             return df['pdf'].tolist()
 
         # integral form
@@ -86,7 +87,7 @@ class gexppow_gen(rv_continuous):
         fcm = frac_chi_mean(alpha, k)
 
         def _kernel(s: float):
-            return norm().pdf(x/s) *  fcm.pdf(s) 
+            return norm().pdf(x/s) *  fcm.pdf(s)  # type: ignore
 
         return quad(_kernel, a=0.0, b=np.inf, limit=10000)[0] / fcm.moment(1.0)
 
@@ -98,7 +99,7 @@ class gexppow_gen(rv_continuous):
                 return self._cdf(x[0], alpha=alpha[0], k=k[0])
             
             df = pd.DataFrame(data={'x': x, 'alpha': alpha, 'k': k})
-            df['cdf'] = df.parallel_apply(lambda row: self._cdf(row['x'], alpha=row['alpha'], k=row['k']), axis=1)
+            df['cdf'] = df.parallel_apply(lambda row: self._cdf(row['x'], alpha=row['alpha'], k=row['k']), axis=1)  # type: ignore
             return df['cdf'].tolist()
 
         # integral form
@@ -108,7 +109,7 @@ class gexppow_gen(rv_continuous):
 
         fcm = frac_chi_mean(alpha, k)
         def _kernel(s: float):
-            return s * erf(x/s/np.sqrt(2)) * fcm.pdf(s)
+            return s * erf(x/s/np.sqrt(2)) * fcm.pdf(s)  # type: ignore
 
         cdf1 = quad(_kernel, a=0.0, b=np.inf, limit=10000)[0] / fcm.moment(1.0)
         return cdf1*0.5 + 0.5

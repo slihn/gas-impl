@@ -14,54 +14,39 @@ from .stable_count_dist import stable_count, gen_stable_count, gsc_normalization
 from .gas_dist import gsas, lihn_stable, frac_chi_mean,\
     g_skew_v2, g_skew_v2_at_s0, from_s1_to_feller, from_feller_to_s1,\
     gsas_pdf_at_zero, gsas_std_pdf_at_zero, gsas_moment, gsas_characteristic_fn
-from .fcm_dist import fcm_moment, fcm_sigma, fcm_inverse_pdf, fcm_inverse
+from .fcm_dist import frac_chi_mean, FracChiMean, fcm_moment, fcm_sigma, fcm_inverse_pdf, fcm_inverse
 from .gexppow_dist import gexppow
 from .wright import wright_fn, wright_f_fn
 from .hankel import *
 from .unit_test_utils import *
 
 
-# GSC
-class Test_Def_1:
-    sigma = 1.5
-    d = 2.3
-    p = 2.0
-    gg = gengamma(a=d/p, c=p, scale=sigma)  # a = d/p, c = p
-    gsc1 = gen_stable_count(alpha=0.0, sigma=sigma, d=d-p, p=p)
-
-    sigma2 = sigma / 2**(2/p)
-    gsc2 = gen_stable_count(alpha=0.5, sigma=sigma2, d=d-p/2, p=p/2)
-
-    def test_gsc0_equal_gengamma(self):
-        x = self.gg.moment(1)
-        compare_two_rvs(x, self.gg, self.gsc1)
-        compare_two_rvs(x, self.gg, self.gsc2)
-
-
-def test_one_sided_vs_wright_f():
-    alpha = 0.45
-    levy1 = levy_stable_extremal(alpha)
-    x = 0.85
-    p = levy1.pdf(x)
-    q = wright_f_fn(x**(-alpha), alpha) / x
-    delta_precise_up_to(p, q)
-
-
 # FCM
-class Test_Def_2:
+class Test_Def_2_1:
     alpha = 0.85
     k = 3.8
-    fcm = gsas.frac_chi_mean(alpha, k)
-    sigma = fcm_sigma(alpha, k)
-    gsc = gen_stable_count(alpha=alpha/2, sigma=sigma, d=k-1, p=alpha)
-    C = gsc_normalization_constant(alpha/2, sigma=sigma, d=k-1, p=alpha)
+    theta = 0.2
 
-    fcm_neg = gsas.frac_chi_mean(alpha, -k)
-    gsc_neg = gen_stable_count(alpha=alpha/2, sigma=1/sigma, d=-k, p=-alpha)
+    fcm2 = FracChiMean(alpha, k, theta)  # this is more convenient for testing
+    fcm = fcm2.fcm  # this is the gsc instance
+    
+    sigma = fcm_sigma(alpha, k, theta)
+    gsc = gen_stable_count(alpha=alpha * fcm2.g,   sigma=sigma, d=k-1, p=alpha)
+    C = gsc_normalization_constant(alpha * fcm2.g, sigma=sigma, d=k-1, p=alpha)
+
+    fcm2_neg = FracChiMean(alpha, -k, theta)
+    fcm_neg = fcm2_neg.fcm
+    gsc_neg = gen_stable_count(alpha=alpha * fcm2.g, sigma=1/sigma, d=-k, p=-alpha)
 
     def test_fcm_vs_gsc(self):
         x = self.fcm.moment(1)
         p1 = self.fcm.pdf(x)
+        p2 = self.gsc.pdf(x)
+        delta_precise_up_to(p1, p2)
+
+    def test_fcm_pdf_by_mellin_vs_gsc(self):
+        x = self.fcm.moment(1)
+        p1 = self.fcm2.pdf_by_mellin(x)
         p2 = self.gsc.pdf(x)
         delta_precise_up_to(p1, p2)
 
@@ -74,23 +59,15 @@ class Test_Def_2:
 
         x1 = x / self.sigma
         y1 = x1**alpha
-        p2 = self.C * x1**(k-2) * wright_fn(-y1, -alpha/2, 0)
+        p2 = self.C * x1**(k-2) * wright_fn(-y1, -alpha * self.fcm2.g, 0)
         delta_precise_up_to(p1, p2)
 
     def test_fcm_constant(self):
         alpha = self.alpha 
         k = self.k
         c1 = self.C * self.sigma
-        c2 = alpha * gamma((k-1)/2) / gamma((k-1)/alpha)
+        c2 = alpha * gamma((k-1) * self.fcm2.g) / gamma((k-1)/alpha)
         delta_precise_up_to(c1, c2)
-
-    def test_fcm_vs_chi_k(self):
-        # alpha = 1
-        k = self.k
-        fcm_k = gsas.frac_chi_mean(1.0, k)
-        chi_k = chi(k, scale=1/np.sqrt(k))
-        x = chi_k.moment(1)
-        compare_two_rvs(x, chi_k, fcm_k)
 
     def test_fcm_neg_vs_gsc(self):
         x = self.fcm_neg.moment(1)
@@ -100,59 +77,32 @@ class Test_Def_2:
 
     def test_fcm_neg_vs_fcm_pos_reflection(self):
         x = self.fcm_neg.moment(1)
-        m1 = fcm_moment(1, self.alpha, self.k)
+        m1 = fcm_moment(1, self.alpha, self.k, self.theta)
         p1 = self.fcm_neg.pdf(x)
         p2 = self.fcm.pdf(1/x) / x**3 / m1
         delta_precise_up_to(p1, p2)
 
     def test_fcm_neg_moment_reflection(self):
         n = 3.0
-        p1 = fcm_moment(n, self.alpha, -self.k)
-        p2 = fcm_moment(-n+1, self.alpha, self.k) / fcm_moment(1, self.alpha, self.k)
+        p1 = fcm_moment(n, self.alpha, -self.k, self.theta)
+        p2 = fcm_moment(-n+1, self.alpha, self.k, self.theta) / fcm_moment(1, self.alpha, self.k, self.theta)
         delta_precise_up_to(p1, p2)
 
     def test_fcm_infinit_k(self):
         with mp.workdps(256*4):
             alpha = mp.mpf(self.alpha)
+            eps = mp.mpf(self.fcm2.eps)
+            g = mp.mpf(self.fcm2.g)
             k = 1e5
-            p2 = mp.power(alpha, (-1/alpha))
-            
-            m1 = fcm_moment(1.0, alpha=alpha, k=k)
-            m2 = fcm_moment(2.0, alpha=alpha, k=k)
-            delta_precise_up_to(m1, p2, abstol=0.005, reltol=0.005)
-            
+
+            m1 = fcm_moment(1.0, alpha=alpha, k=k, theta=self.theta)
+            m2 = fcm_moment(2.0, alpha=alpha, k=k, theta=self.theta)
             p1 = m2 - m1**2
             delta_precise_up_to(p1, 0)
 
+            p2 = float(mp.power(eps, eps))
+            delta_precise_up_to(m1, p2, abstol=0.005, reltol=0.005)
 
-class Test_Def_3:
-    # g_skew
-    alpha = 0.9
-    theta = 0.1
-
-    def test_constant_s(self):
-        # TODO for some reason, this is very slow
-        for s in [0.90, 1.0, 1.15]:
-            def fn1(x):
-                return g_skew_v2(x, s, self.alpha, self.theta, use_short_cut=False, use_t_max=False)
-            
-            with mp.workdps(15):
-                p1 = quad(fn1, a=-20.0, b=0.0,  limit=100000)[0]
-                p2 = quad(fn1, a=0.0,   b=20.0, limit=100000)[0]
-                delta_precise_up_to(p1+p2, 1/s)
-
-    def test_s_at_zero(self):
-        p1 = g_skew_v2_at_s0(self.alpha, self.theta)
-        x = 0.35
-        p2 = g_skew_v2(x, 0, self.alpha, self.theta)
-        delta_precise_up_to(p1, p2)
-
-    def test_zero_theta(self):
-        x = 0.35
-        s = 0.73
-        p1 = g_skew_v2(x, s, self.alpha, 0.0)
-        p2 = norm().pdf(x*s)
-        delta_precise_up_to(p1, p2)
 
 
 # tests about chi_{alpha,k}
@@ -241,33 +191,6 @@ class Test_Def_4_Lemma_2_PDF:
         p3 = lihn_stable(alpha=1.0, k=k, theta=0.0)
         compare_two_rvs(self.x, p1, p3)
 
-
-class Test_Def_4_Lemma_2_CF:
-    def test_cf_at_0(self):
-        for alpha in [0.85, 1.0, 1.2]:
-            for k in [1.0, 2.0, 3.0]:
-                p1 = gsas_characteristic_fn(0.0, alpha=alpha, k=k)
-                delta_precise_up_to(p1, 1.0)
-
-    def test_cf_alpha_stable(self):
-        x = 0.55
-        alpha = 0.85
-        p1 = gsas_characteristic_fn(x, alpha=alpha, k=1.0)
-        p2 = np.exp(-x**alpha)
-        delta_precise_up_to(p1, p2)
-
-    def test_cf_of_t(self):
-
-        def t_cf(x, k):
-            # modified Bessel function of the second kind
-            t1 = abs(x) * np.sqrt(k)
-            return special.kn(k/2, t1) * t1**(k/2) / gamma(k/2) / 2**(k/2-1)
-
-        x = 0.55
-        k = 4.0
-        p1 = t_cf(x, k=k)
-        p2 = gsas_characteristic_fn(x, alpha=1.0, k=k)
-        delta_precise_up_to(p1, p2)
 
 
 class Test_Def_5:

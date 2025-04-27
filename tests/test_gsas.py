@@ -10,13 +10,14 @@ from scipy.integrate import quad
 from scipy import stats
 from scipy.stats import norm, cauchy, levy_stable
 
-from gas_impl.stable_count_dist import gen_stable_count
-from gas_impl.gas_dist import gsas, gsas_pdf_at_zero, gsas_std_pdf_at_zero, gsas_moment, gsas_kurtosis,\
+from .stable_count_dist import gen_stable_count
+from .gas_dist import gsas, gsas_pdf_at_zero, gsas_std_pdf_at_zero, gsas_moment, gsas_kurtosis,\
     frac_hyp_fn, t_cdf_by_hyp2f1, t_cdf_by_betainc, t_cdf_by_binom
-from gas_impl.fcm_dist import fcm_moment, fcm_sigma
-from gas_impl.gsas_dist import GSaS_Wright, GSaS_Wright_MP, Wright4Ways_MP
-from gas_impl.gexppow_dist import exppow
-from gas_impl.unit_test_utils import *
+from .fcm_dist import fcm_moment, fcm_sigma
+from .gsas_dist import GSaS_Wright, GSaS_Wright_MP, Wright4Ways_MP
+from .hyp_geo2 import frac_hyp2f1_by_alpha_k
+from .gexppow_dist import exppow
+from .unit_test_utils import *
 
 
 # -------------------------------------------------------------------------------------
@@ -44,6 +45,7 @@ class Test_Frac_HyperGeo:
     alpha = 1.2
     k = 2.6
     g = gsas(alpha, k)
+    fh = frac_hyp2f1_by_alpha_k(alpha, k, 0.5, 1.5)
     
     def test_gsas_cdf(self):
         for x in [-0.25, 0.0, 0.65, 1.5]:
@@ -61,6 +63,12 @@ class Test_Frac_HyperGeo:
         for x in [-0.25, -0.45]:
             p1 = hyp2f1(b, (k+1)/2, c, x) 
             p2 = frac_hyp_fn(x, 1.0, k, b, c) * b2
+            delta_precise_up_to(p1, p2, msg_prefix=f"x={x}")
+
+    def test_gsas_cdf_by_frac_hyp2f1(self):
+        for x in [-0.25, 0.0, 0.65, 1.5]:
+            p1 = self.g.cdf(x)
+            p2 = 0.5 + x / np.sqrt(2*np.pi) * self.fh.scaled_integral(-0.5 * x**2)
             delta_precise_up_to(p1, p2, msg_prefix=f"x={x}")
 
 

@@ -5,8 +5,8 @@ import pandas as pd
 from scipy.special import gamma
 from scipy.integrate import quad
 
-from gas_impl.stable_count_dist import stable_count, gen_stable_count, stable_vol
-from gas_impl.unit_test_utils import *
+from .stable_count_dist import stable_count, gen_stable_count, stable_vol
+from .unit_test_utils import *
 
 
 # ----------------------------------------------------------------

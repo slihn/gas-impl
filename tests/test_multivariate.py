@@ -10,10 +10,10 @@ from scipy import stats
 from scipy.stats import multivariate_normal, multivariate_t, t
 
 
-from gas_impl.multivariate import Multivariate_GSaS, Multivariate_GSaS_2D
-from gas_impl.gas_dist import gsas
-from gas_impl.fcm_dist import fcm_moment
-from gas_impl.unit_test_utils import *
+from .multivariate import Multivariate_GSaS, Multivariate_GSaS_Adp_2D
+from .gas_dist import gsas
+from .fcm_dist import fcm_moment
+from .unit_test_utils import *
 
 def _x0(n): return [0.0 for x in range(int(n))]
 def _cov_id(n): return np.identity(int(n))
@@ -26,7 +26,7 @@ class Test_MGSaS_T_Equiv_2d:
     x0 = _x0(n)
     x1 = [0.2, 0.3]
 
-    rvt = multivariate_t(x0, cov, df=k)
+    rvt = multivariate_t(x0, cov, df=k)  # type: ignore
     mgsas = Multivariate_GSaS(cov=cov, alpha=1.0, k=k)
 
     def test_pdf_equiv_at_x0(self):
@@ -43,7 +43,7 @@ class Test_MGSaS_T_Equiv_2d:
         xs = [self.x1, self.x1, np.array(self.x1)]
         p1 = self.mgsas.pdf(xs)
         p2 = self.mgsas.pdf(np.array(xs))
-        delta_precise_up_to(sum(p1), sum(p2))
+        delta_precise_up_to(sum(p1), sum(p2))  # type: ignore
 
 
 class Test_MGSaS_T_Equiv_3d:
@@ -53,7 +53,7 @@ class Test_MGSaS_T_Equiv_3d:
     x0 = _x0(n)
     x1 = [0.2, 0.3, 0.4]
 
-    rvt = multivariate_t(x0, cov, df=int(k))
+    rvt = multivariate_t(x0, cov, df=int(k))  # type: ignore
     mgsas = Multivariate_GSaS(cov=cov, alpha=1.0, k=k)
 
     def test_pdf_equiv_at_x0(self):
@@ -111,7 +111,7 @@ class Test_MGSaS_MVNormal:
         var = alpha**(2/alpha)
         mgsas = Multivariate_GSaS(cov=cov/var, alpha=alpha, k=10.0)
         p1 = mgsas.pdf(x0) 
-        p2 = multivariate_normal(x0, cov).pdf(x0)
+        p2 = multivariate_normal(x0, cov).pdf(x0)  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_3d_pdf_equiv_at_x0(self):
@@ -123,7 +123,7 @@ class Test_MGSaS_MVNormal:
         var = alpha**(2/alpha)
         mgsas = Multivariate_GSaS(cov=cov/var, alpha=alpha, k=10.0)
         p1 = mgsas.pdf(x0) 
-        p2 = multivariate_normal(x0, cov).pdf(x0)
+        p2 = multivariate_normal(x0, cov=cov).pdf(x0)  # type: ignore
         delta_precise_up_to(p1, p2, abstol=0.001, reltol=0.01)
 
 
@@ -131,7 +131,7 @@ class Test_MGSaS_MVNormal:
 class Test_MGSaS_2D:
     n = 2.0
     cov = np.array([[2.1, 0.4], [0.4, 1.5]])
-    mgsas = Multivariate_GSaS_2D(cov=cov, alpha=[1.1, 0.9], k=[3.0, 4.0])
+    mgsas = Multivariate_GSaS_Adp_2D(cov=cov, alpha=[1.1, 0.9], k=[3.0, 4.0])
     
     mm1 = mgsas.fcm_moments(-1.0)
     mm2 = mgsas.fcm_moments(-2.0)
@@ -162,8 +162,8 @@ class Test_MGSaS_2D:
 class Test_MGSaS_2D_T:
     n = 2.0
     cov = _cov_id(n)
-    mgsas = Multivariate_GSaS_2D(cov=cov, alpha=[1.0, 1.0], k=[3.0, 4.0])
-    mgsas2 = Multivariate_GSaS_2D(cov=cov, alpha=[1.1, 0.9], k=[3.0, 4.0])
+    mgsas = Multivariate_GSaS_Adp_2D(cov=cov, alpha=[1.0, 1.0], k=[3.0, 4.0])
+    mgsas2 = Multivariate_GSaS_Adp_2D(cov=cov, alpha=[1.1, 0.9], k=[3.0, 4.0])
 
     def test_peak_pdf(self):
         p1 = self.mgsas2.pdf(self.mgsas2.x0)
@@ -173,19 +173,19 @@ class Test_MGSaS_2D_T:
     def test_id_pdf_refactor_to_t_at_x0(self):
         x0 = _x0(self.n)        
         p1 = self.mgsas.pdf(x0) 
-        p2 = t(3).pdf(x0[0]) * t(4).pdf(x0[1])
+        p2 = t(3).pdf(x0[0]) * t(4).pdf(x0[1])  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_id_pdf_refactor_to_t_at_x1(self):
         x1 = [0.2, 0.3]
         p1 = self.mgsas.pdf(x1) 
-        p2 = t(3).pdf(x1[0]) * t(4).pdf(x1[1])
+        p2 = t(3).pdf(x1[0]) * t(4).pdf(x1[1])  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_id_pdf_refactor_to_gsas_at_x1(self):
         x1 = [0.2, 0.3]
         p1 = self.mgsas2.pdf(x1) 
-        p2 = gsas(alpha=1.1, k=3.0).pdf(x1[0]) * gsas(alpha=0.9, k=4.0).pdf(x1[1])
+        p2 = gsas(alpha=1.1, k=3.0).pdf(x1[0]) * gsas(alpha=0.9, k=4.0).pdf(x1[1])  # type: ignore
         delta_precise_up_to(p1, p2)
 
 

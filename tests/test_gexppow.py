@@ -8,10 +8,10 @@ from scipy.integrate import quad
 from scipy import stats
 from scipy.stats import norm, cauchy, levy_stable, gengamma
 
-from gas_impl.gas_dist import gsas, gsas_characteristic_fn
-from gas_impl.fcm_dist import fcm_moment
-from gas_impl.gexppow_dist import gexppow, gexppow_pdf_at_zero, gexppow_std_pdf_at_zero, gexppow_moment, gexppow_kurtosis
-from gas_impl.unit_test_utils import *
+from .gas_dist import gsas, gsas_characteristic_fn
+from .fcm_dist import fcm_moment
+from .gexppow_dist import gexppow, gexppow_pdf_at_zero, gexppow_std_pdf_at_zero, gexppow_moment, gexppow_kurtosis
+from .unit_test_utils import *
 
 
 # -------------------------------------------------------------------------------------

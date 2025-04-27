@@ -7,10 +7,10 @@ from scipy.special import gamma
 from scipy.integrate import quad
 from scipy.stats import levy_stable
 
-from gas_impl.stable_count_dist import stable_count, gen_stable_count
-from gas_impl.gas_dist import gsas, lihn_stable, gsas_moment
-from gas_impl.gexppow_dist import gexppow, gexppow_moment, gexppow_kurtosis
-from gas_impl.unit_test_utils import *
+from .stable_count_dist import stable_count, gen_stable_count
+from .gas_dist import gsas, lihn_stable, gsas_moment
+from .gexppow_dist import gexppow, gexppow_moment, gexppow_kurtosis
+from .unit_test_utils import *
 
 
 # -------------------------------------------------------------------------------------

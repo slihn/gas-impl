@@ -1,9 +1,13 @@
 import numpy as np
 import pandas as pd
+import time
+
 from scipy.special import gamma
 from scipy.integrate import quad
 from scipy import stats
 from scipy.stats import gengamma
+
+from .utils import calc_mvsk_stats
 
 
 def delta_precise_up_to(p, q, abstol=1e-4, reltol=1e-4, msg_prefix=""):
@@ -12,7 +16,6 @@ def delta_precise_up_to(p, q, abstol=1e-4, reltol=1e-4, msg_prefix=""):
     assert actual1 < abstol, f"ERROR: {msg_prefix} abstol failed: x={p}, y={q}, actual {actual1} vs {abstol}"
     if p*q != 0:
         assert actual2 < reltol, f"ERROR: {msg_prefix} reltol failed: x={p}, y={q}, actual {actual2} vs {reltol}"
-
 
 
 def compare_two_rvs(x, rv1, rv2, min_p=0.1, abstol=1e-4, reltol=1e-4, msg_prefix="") -> float:  # return p1 for further usage
@@ -47,6 +50,28 @@ def ratio_dist_test_suite(p1, x, unit_fn, gsc):
     delta_precise_up_to(p1, p1i)
 
 
+def assert_mvsk_from_rvs(stats, z, tol, abstol_max, msg_prefix, abstol_default=0.1):
+    s1 = stats
+    s2 = calc_mvsk_stats(z)
+    for i in [0,1,2,3]:
+        abstol = abstol_max if i >= 2 else abstol_default
+        delta_precise_up_to(s1[i], s2[i], abstol=abstol, reltol=tol[i], msg_prefix=msg_prefix(i))
+
+
+# ---------------------------------------------------------------
+def quad_total_density(pdf, two_sided=True, tol=1e-4):
+    # calculate total density via integration, use smaller tol to save time
+    c1 = quad(pdf, a=0, b=np.inf,  epsabs=tol, epsrel=tol)[0]
+    c2 = quad(pdf, a=-np.inf, b=0, epsabs=tol, epsrel=tol)[0] if two_sided == True else 0.0
+    return (c1 + c2) # total density
+
+
+def quad_total_density_one_sided(pdf, a=0, b=np.inf, tol=1e-4):
+    # calculate total density via integration, use smaller tol to save time
+    c1 = quad(pdf, a=a, b=b,  epsabs=tol, epsrel=tol)[0]
+    return c1 # total density
+
+
 # ---------------------------------------------------------------
 
 def stretched1(x, alpha):
@@ -64,3 +89,9 @@ def pdf_gg(x, a, d, p):
 
 def gg_rv(a, d, p):
     return gengamma(a=d/p, c=p, scale=a)
+
+
+# ---------------------------------------------------------------
+def print_time(msg):
+    formatted_time = time.strftime("%H:%M:%S", time.localtime())
+    print(f"{msg} at {formatted_time}") 
