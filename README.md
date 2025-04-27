@@ -13,6 +13,13 @@ This package provides the reference implementation for all the distributions men
 See the test cases for usage examples. Every function is tested in at least one test cases.
 
 
+![VIX Fit](docs/plot_vix_gas_sn.png)
+
+![SPX Fit](docs/plot_spx_gas_sn.png)
+
+![VIX-SPX Elliptical Fit](docs/plot_elliptical_vix_spx.png)
+
+
 My previous 2024 paper is located at
 
 https://arxiv.org/abs/2405.04693
@@ -50,10 +57,10 @@ pytest
 
 ## Example
 
-Once you have installed the package, you can run the following snippet:
+Once you have installed the package, you can run the following snippets:
 
 ```python
-from gas_impl.gas_dist import gsas
+from gas_impl.stats import gsas
 
 g = gsas(alpha=1.1, k=2.5)
 g.pdf(0.25)
@@ -61,4 +68,13 @@ g.pdf(0.25)
 
 The answer should be 0.32678...
 
+Add skewness with the beta parameter:
 
+```python
+from gas_impl.stats import gas_sn
+
+g = gas_sn(alpha=1.1, k=2.5, beta=0.5)
+g.pdf(0.25)
+```
+
+The answer should be 0.35881...
