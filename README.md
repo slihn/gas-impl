@@ -1,14 +1,22 @@
 # gas-impl
-# Reference implementation of generalized alpha-stable distribution
+# GAS-SN: generalized alpha-stable distribution with skew-normal family
 
 ## Overview
 
-This package provides the initial reference implementation
-and test cases for my paper:
+This package is upgraded to incorporate the skew-normal family in 2025, called GAS-SN. 
+The GAS-SN distribution is the most flexible distribution up to date, that can fit data sets with high skewness and kurtosis.
+
+The content is wriiten to a book format located at [here](docs/fracdist.pdf).
+As of April 2025, the book is in early draft format. More detail will be filled in.
+
+This package provides the reference implementation for all the distributions mentioned in the book.
+See the test cases for usage examples. Every function is tested in at least one test cases.
+
+
+My previous 2024 paper is located at
 
 https://arxiv.org/abs/2405.04693
 
-See the test cases for usage examples.
 
 This package is developed under linux/ubuntu.
 The 'pandarallel' package is used for multicore processing when an array is sent to the 'pdf' or 'cdf' functions.
