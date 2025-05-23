@@ -316,6 +316,12 @@ def gas_moment_one_sided_from_mellin(n: float, alpha: float, k: float, theta: fl
     return gas_mellin_transform(float(n) + 1.0, eps, float(k), g) 
 
 
+def gsas_mellin_transform(s, alpha: float, k: float):
+    eps = 1.0 / alpha
+    g = 0.5
+    return gas_mellin_transform(s, eps=eps, k=k, g=g)
+
+
 # LihnStable is a class to handle the stable PDF more elegantly
 # lihn_stable us a bit awkward to deal with the reflective nature of the stable distribution
 class LihnStable:

@@ -1,12 +1,12 @@
 
 from functools import lru_cache, partial
-import numpy as np 
+import numpy as np
 import pandas as pd
 from typing import Union, Optional, List
 from abc import abstractmethod
 
 from scipy.stats import rv_continuous
-from scipy.stats import norm, skewnorm, multivariate_normal, t, chi, chi2, f
+from scipy.stats import norm, skewnorm, halfnorm, multivariate_normal, t, chi, chi2, f
 from scipy.integrate import quad
 from scipy.special import gamma, owens_t
 from scipy.optimize import minimize
@@ -91,7 +91,16 @@ class gas_sn_gen(rv_continuous):
         # note: it is unstable to use sn = skewnorm(beta) directly, e.g. when beta = -3.5 or 0, its PDF returns NaN
         
         def _kernel(s: float):
-            return s * skewnorm.pdf(s*x, beta) * chi.pdf(s)  # type: ignore
+            if np.isfinite(beta):  # type: ignore
+                sn = skewnorm.pdf(s*x, beta)
+            elif beta == np.inf:
+                sn = halfnorm.pdf(s*x)
+            elif beta == -np.inf:
+                sn = halfnorm.pdf(-s*x)
+            else:
+                raise ValueError(f"Invalid beta value: {beta}")
+
+            return s * sn * chi.pdf(s)  # type: ignore
 
         return quad(_kernel, a=0.0, b=np.inf, limit=10000)[0]
 
@@ -110,13 +119,33 @@ class gas_sn_gen(rv_continuous):
         chi = frac_chi_mean(alpha=alpha, k=k)
         
         def _kernel(s: float):
-            return skewnorm.cdf(s*x, beta) * chi.pdf(s)  # type: ignore
+            if np.isfinite(beta):  # type: ignore
+                sn = skewnorm.cdf(s*x, beta)
+            elif beta == np.inf:
+                sn = halfnorm.cdf(s*x)
+            elif beta == -np.inf:
+                sn = 1.0 - halfnorm.cdf(-s*x)
+            else:
+                raise ValueError(f"Invalid beta value: {beta}")
+
+            return sn * chi.pdf(s)  # type: ignore
 
         return quad(_kernel, a=0.0, b=np.inf, limit=10000)[0]
 
     def _munp(self, n, alpha, k, beta, *args, **kwargs):
         n = float(n)
-        return skewnorm.moment(n, float(beta)) * fcm_moment(-n, alpha=float(alpha), k=float(k))
+        beta = float(beta)
+
+        if np.isfinite(beta):  # type: ignore
+            sn = skewnorm.moment(n, beta)
+        elif beta == np.inf:
+            sn = halfnorm.moment(n)
+        elif beta == -np.inf:
+            sn = halfnorm.moment(n) * (-1)**n
+        else:
+            raise ValueError(f"Invalid beta value: {beta}")
+
+        return sn * fcm_moment(-n, alpha=float(alpha), k=float(k))
 
     def _argcheck(self, *args, **kwargs):
         # Customize the argument checking here

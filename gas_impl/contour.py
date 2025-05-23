@@ -129,7 +129,7 @@ class ContourPlotBase:
             return p
 
     def set_std_title(self, ax):
-        a_str = "alpha" if 'a' in self.mode else "s (1/alpha)"
+        a_str = "alpha" if 'a' in self.mode else "epsilon (1/alpha)"
         ax.set_title(f'{self.name} of {self.dist_family} by {a_str}: capped by [{self.z_min:.1f}, {self.z_max:.1f}]')
 
     def std_xy_axes_by_mode(self, ax):
@@ -188,7 +188,7 @@ def _std_k_axis(ax, fn):
     fn(ax, 'k (degree of freedom)', [ 1, 2, 3, 4, 5, 10])
 
 def _std_a_axis(ax, fn, inv=False):
-    label = 'alpha' if not inv else 's (inverse of alpha)'
+    label = 'alpha' if not inv else 'epsilon (inverse of alpha)'
     fn(ax, label, [ 0.5, 1.0, 2.0])
 
 
@@ -307,7 +307,7 @@ class CountourSolver:
         ax1.legend(loc="lower left")
         
         ax2.set_xlabel('k (degree of freedom)')
-        ax2.set_ylabel('s (1/alpha)')
+        ax2.set_ylabel('epsilon (1/alpha)')
         ax2.legend(loc="upper left")
         
         fig.suptitle(f"find solution for pdf0_target = {self.pdf0_target}, kurt_target = {self.kurt_target}")
