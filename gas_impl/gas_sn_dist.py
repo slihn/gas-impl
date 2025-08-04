@@ -35,6 +35,12 @@ def sn_mellin_transform(s, beta):
     return 2.0 * norm_mellin_transform(s) * t(s).cdf(x)
 
 
+def owens_t_mellin_transform(s, beta):
+    norm_mellin = norm_mellin_transform(s + 1)
+    t_mellin = t(s+1).cdf(beta * np.sqrt(s+1))
+    return norm_mellin / s * (t_mellin - 0.5)
+
+
 def gas_sn_mellin_transform(s, alpha, k, beta, exact_form=False):
     if exact_form == True:
         x = beta * s**0.5
@@ -131,6 +137,19 @@ class gas_sn_gen(rv_continuous):
             return sn * chi.pdf(s)  # type: ignore
 
         return quad(_kernel, a=0.0, b=np.inf, limit=10000)[0]
+
+    def _rvs(self, alpha, k, beta, *args, **kwargs):
+        size = kwargs.get('size', 1)
+        alpha = float(alpha)
+        k = float(k)
+        beta = float(beta)
+        # # (2.13) random number generation
+        z = skewnorm(beta).rvs(size)
+        v = frac_chi_mean(alpha=alpha, k=k).rvs(size)
+        if size == 1:
+            return z / v  # type: ignore
+        else:
+            return np.array(z) / np.array(v)  # type: ignore
 
     def _munp(self, n, alpha, k, beta, *args, **kwargs):
         n = float(n)
@@ -353,28 +372,26 @@ class SN_Std(Univariate_Skew_Std):
     def _rvs(self, size: int):
         # # (2.12a) random number generation via selection
         z = [ (x0 if self.beta * x0 > x1 else -x0) for x0, x1 in multivariate_normal(cov=np.identity(2)).rvs(size=size)]  # type: ignore
-        return np.array(z)
+        return np.array(z) if size > 1 else z[0]
 
     def _rvs_v2(self, size: int):
         # # (2.13) random number generation via selection and correlation
         corr = np.array([[1.0, self.delta], [self.delta, 1.0]])
         z = [ (x0 if x1 > 0 else -x0) for x0, x1 in multivariate_normal(cov=corr).rvs(size=size)]  # type: ignore
-        return np.array(z)
+        return np.array(z) if size > 1 else z[0]
 
     def _rvs_v3(self, size: int):
         # # (2.14) random number generation via asymmetric correlation
         z = [ np.sqrt(1-self.delta**2) * x0 + self.delta * abs(x1) 
               for x0, x1 in multivariate_normal(cov=np.identity(2)).rvs(size=size)]  # type: ignore
-        return np.array(z)
+        return np.array(z) if size > 1 else z[0]
 
     def _rvs_v4(self, size: int):
         # # (2.16) random number generation via maxima of bivariate marginals
         rho = 1 - 2 * self.delta**2
         corr = np.array([[1.0, rho], [rho, 1.0]])
         z = [ max(x) for x in multivariate_normal(cov=corr).rvs(size=size)]  # type: ignore
-        return np.array(z)
-
-
+        return np.array(z) if size > 1 else z[0]
 
 
 class SN(SN_Std, Univariate_Skew_LocScale):
@@ -440,10 +457,12 @@ class ST_Std(Univariate_Skew_Std):
 
     def _rvs(self, size: int):
         # # (2.13) random number generation
-        z = SN_Std(self.beta)._rvs(size=size)
+        z0 = SN_Std(self.beta)._rvs(size=size)
         v = chi(self.k).rvs(size) / self.k**0.5
-        st = np.array(z) / np.array(v) 
-        return st
+        if size == 1:
+            return z0 / v  # type: ignore
+        else:
+            return np.array(z0) / np.array(v)
 
 
 class ST(ST_Std, Univariate_Skew_LocScale):
@@ -508,8 +527,15 @@ class GAS_SN_Std(Univariate_Skew_Std):
         return self._mode_estimate()
 
     def _rvs(self, size: int):
-        return np.zeros(size)  # TODO placeholder
-    
+        # Section 12.1
+        assert isinstance(size, int) and size > 0, f"ERROR: size = {size} must be a positive integer"
+        z0 = SN_Std(self.beta)._rvs(size=size)
+        v = self.fcm.rvs(size=size)
+        if size == 1:
+            return z0 / v
+        else:
+            return np.array(z0) / np.array(v)  # type: ignore
+
     def _m3(self):
         def q(n): return fcm_moment(-n, self.alpha, self.k)
         delta_3 = np.sqrt(2.0 / np.pi) * self.delta * (3.0 - self.delta**2)
@@ -560,3 +586,7 @@ class GAS_SN(GAS_SN_Std, Univariate_Skew_LocScale):
 
     def ppf(self, p):
         return gas_sn(self.alpha, self.k, self.beta, loc=self.loc, scale=self.scale).ppf(p)
+
+    def rvs(self, size: int):
+       z = self._rvs(size=size)
+       return z * self.scale + self.loc

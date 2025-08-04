@@ -1,11 +1,13 @@
 
 from scipy.stats import skewnorm, chi, chi2, f, skew, kurtosis
+from scipy.integrate import quad
+from scipy.special import owens_t
 from scipy.optimize import minimize
 
 from .unit_test_utils import *
 
 from .fcm_dist import frac_chi_mean
-from .gas_sn_dist import gas_sn, SN_Std, SN, ST_Std, ST, GAS_SN_Std, GAS_SN, pdf_sqare, gas_sn_mellin_transform
+from .gas_sn_dist import gas_sn, SN_Std, SN, ST_Std, ST, GAS_SN_Std, GAS_SN, pdf_sqare, gas_sn_mellin_transform, owens_t_mellin_transform
 
 
 class Test_PDF_Square:
@@ -158,6 +160,14 @@ class Test_SN_RVS:
             self.z_sqr, tol,
             msg_prefix=lambda i: f"SN_RVS {i+1}-th mvsk Z^2",
             abstol_max=1.0)
+
+# --------------------------------------------------------------------
+def test_owens_t_mellin_transform():
+    for beta in [-0.8, 0.0, 0.6]:
+        for s in [0.5, 1.0, 1.5]:
+            p1 = owens_t_mellin_transform(s, beta)
+            p2 = quad(lambda x: owens_t(x, beta) * x**(s-1), 0, np.inf)[0]
+            delta_precise_up_to(p1, p2, msg_prefix=f"beta ={beta}, s={s}")
 
 
 # --------------------------------------------------------------------
@@ -352,3 +362,56 @@ class Test_GAS_SN:
         p1 = self.g2._kurtosis()
         p2 = self.g2._kurtosis_formula()
         delta_precise_up_to(p1, p2)
+
+
+class Test_GAS_SN_RVS:
+    alpha = 1.35
+    k = 6.2
+    beta = 0.45
+    num_samples = int(5e7)  # each 1e6 takes a second
+
+    g = gas_sn(alpha, k, beta)
+    g2 = GAS_SN_Std(alpha, k, beta)
+
+    loc = -0.2
+    scale = 0.85
+    gls = gas_sn(alpha, k, beta, scale=scale, loc=loc)
+    gls2 = GAS_SN(alpha, k, beta, scale=scale, loc=loc)
+
+    z = g.rvs(num_samples)
+    z2 = g2._rvs(num_samples)
+
+    z_ls = gls.rvs(num_samples)
+    z_ls2 = gls2.rvs(num_samples)
+
+    def test_mvsk_from_rvs_g(self):
+        tol = [5e-3, 1e-2, 0.1, 0.3]  # higher moments are harder to pass!
+        assert_mvsk_from_rvs(
+            self.g2._stats_mvsk(),
+            self.z, tol,
+            msg_prefix= lambda i: f"GAS_SN_RVS {i+1}-th mvsk Z",
+            abstol_max=1.0)
+
+    def test_mvsk_from_rvs_g2(self):
+        tol = [5e-3, 1e-2, 0.1, 0.3]  # higher moments are harder to pass!
+        assert_mvsk_from_rvs(
+            self.g2._stats_mvsk(),
+            self.z2, tol,
+            msg_prefix= lambda i: f"GAS_SN_RVS {i+1}-th mvsk Z2",
+            abstol_max=1.0)
+
+    def test_mvsk_from_rvs_gls(self):
+        tol = [1e-2, 1e-2, 0.1, 0.3]  # higher moments are harder to pass!
+        assert_mvsk_from_rvs(
+            self.gls2.stats_mvsk(),
+            self.z_ls, tol,
+            msg_prefix= lambda i: f"GAS_SN_RVS {i+1}-th mvsk Z_ls",
+            abstol_max=1.0)
+
+    def test_mvsk_from_rvs_gls2(self):
+        tol = [1e-2, 1e-2, 0.1, 0.3]  # higher moments are harder to pass!
+        assert_mvsk_from_rvs(
+            self.gls2.stats_mvsk(),
+            self.z_ls2, tol,
+            msg_prefix= lambda i: f"GAS_SN_RVS {i+1}-th mvsk Z_ls2",
+            abstol_max=1.0)
