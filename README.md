@@ -39,7 +39,7 @@ To showcase how good the fits are, two univariate fits on VIX and SPX return dis
 
 The bivariate VIX-SPX data set is fitted with the bivariate elliptical distribution, as shown below:
 
-<img src="docs/plot_elliptical_vix_spx.png" width="400">
+<img src="docs/plot_elliptical_vix_spx.png" width="600">
 
 My previous 2024 paper that laid the foundation is located at
 
