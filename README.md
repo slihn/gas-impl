@@ -17,13 +17,13 @@ In late 2025, I have decided to call this group of new distribution **The Fracti
 <tr>
 <th> classic distribution </th><th> fractional distribution </th>
 </tr><tr>
-<td> generalized gamma distribution </td><td> fractional gamma distribution (chapter 6)</td>
+<td> generalized gamma distribution </td><td> fractional gamma distribution (Chapter 6)</td>
 </tr><tr>
 <td> chi/chi2 distribution </td><td> fractional chi/chi2 distribution (Chapter 7)</td>
 </tr><tr>
 <td> F distribution </td><td> fractional F distribution (Chapter 8)</td>
 </tr><tr>
-<td> univariate skew-t distribution </td><td> univariate GAS-SN distribution (chapter 12)</td>
+<td> univariate skew-t distribution </td><td> univariate GAS-SN distribution (Chapter 12)</td>
 </tr><tr>
 <td> multivariate skew-t distribution </td><td> multivariate elliptical GAS-SN distribution (Chapter 15)</td>
 <tr>
@@ -39,8 +39,7 @@ To showcase how good the fits are, two univariate fits on VIX and SPX return dis
 
 The bivariate VIX-SPX data set is fitted with the bivariate elliptical distribution, as shown below:
 
-![VIX-SPX Elliptical Fit](docs/plot_elliptical_vix_spx.png)
-
+<img src="docs/plot_elliptical_vix_spx.png" width="400">
 
 My previous 2024 paper that laid the foundation is located at
 
