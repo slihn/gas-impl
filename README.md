@@ -1,7 +1,7 @@
 # gas-impl
 # GAS-SN: generalized alpha-stable distribution with skew-normal family
 
-## Overview
+## Overview - Fractional Distributions
 
 This package is upgraded to incorporate the skew-normal family in 2025, called GAS-SN. 
 The GAS-SN distribution is the most flexible distribution up to date, that can fit data sets with high skewness and kurtosis.
@@ -11,6 +11,18 @@ As of April 2025, the book is in early draft format. More detail will be filled 
 
 This package provides the reference implementation for all the distributions mentioned in the book.
 See the test cases for usage examples. Every function is tested in at least one test cases.
+
+In late 2025, I have decided to call this group of new distribution **The Fractional Distributions**:
+<table>
+<tr>
+<th> classic distribution </th><th> fractional distribution </th>
+<td> generalized gamma distribution </td><td> fractional gamma distribution (chapter 6)</td>
+<td> chi/chi2 distribution </td><td> fractional chi/chi2 distribution (Chapter 7)</td>
+<td> F distribution </td><td> fractional F distribution (Chapter 8)</td>
+<td> univariate skew-t distribution </td><td> univariate GAS-SN distribution (chapter 12)</td>
+<td> multivariate skew-t distribution </td><td> multivariate elliptical GAS-SN distribution (Chapter 15)</td>
+<tr>
+</table>
 
 To showcase how good the fits are, two univariate fits on VIX and SPX return distributions are presented below:
 <table>
