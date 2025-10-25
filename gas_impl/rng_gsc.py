@@ -3,18 +3,22 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from time import localtime, strftime
 from functools import lru_cache
-from scipy.stats import norm
-from scipy.stats import skew, kurtosis
+from scipy.stats import norm, chi2
+from scipy.stats import skew, kurtosis, rv_continuous
 import gc 
 import inspect
 from collections import OrderedDict
-from typing import List
+from typing import List, Optional
 
 
 from .stable_count_dist import gsc_mu_by_f, gen_stable_count
 from .fcm_dist import frac_chi_mean, frac_chi2_mean, fcm_mu_by_f, fcm_inverse, fcm_inverse_mu_by_f, fcm_moment
+from .ff_dist import frac_f
 from .utils import calc_stats_from_moments
 
+
+# GSC is renamed to FG (frac_gamma) in 10/2025
+# The code here still uses GSC for historical reasons
 
 class RV_Simulator:
     def __init__(self, mu_fn, num_years, vol=0.85, s_prec=2, 
@@ -28,12 +32,15 @@ class RV_Simulator:
         self.dt = 1.0/365.0  # one day
         self.size = int(np.floor(self.num_years/self.dt))
         self.rs = pd.DataFrame()  # result set
+        
+        self.gsc: Optional[rv_continuous] = None  # it will be created in subclass
 
     def initialize_mu_cache(self, max_s=10.0):
         for s in np.linspace(0.001, max_s, num = int(max_s * 1000)):
             self.mu_fn(round(s,self.s_prec))
 
     def gsc_first_moment(self):
+        assert self.gsc is not None
         return self.gsc.moment(1.0)  # type: ignore
 
     def locate_lowest_s(self):
@@ -186,7 +193,7 @@ class GSC_RV_Simulator(RV_Simulator):
         self.d = d
         self.p = p
         self.s_prec = 2  # this affects speed a lot
-        self.gsc = self.create_gsc()
+        self.gsc = self.create_gsc()  # type: ignore
 
         self.std_mu.cache_clear() 
         mu_fn = lambda x: self.std_mu(x)
@@ -285,10 +292,13 @@ class SV_RV_Simulator(GSC_RV_Simulator):
 class FCM_RV_Simulator(GSC_RV_Simulator):
     def __init__(self, alpha, k, 
                  num_years=100000, is_ratio=True, initialize=True,
+                 is_fcm2=False,  # tweak it to simulate FCM2
                  W1_rv=None):
         self.alpha = alpha
         self.k = k
+        self.is_fcm2 = is_fcm2
         self.is_ratio = is_ratio
+        self.dist_name = "FCM" if not is_fcm2 else "FCM2"
         dist = self.create_gsc()
         pm = inspect.signature(gen_stable_count._pdf).bind('x', *dist.args, **dist.kwds).arguments
         print(pm)
@@ -298,10 +308,14 @@ class FCM_RV_Simulator(GSC_RV_Simulator):
                          W1_rv=W1_rv)
         if self.is_ratio:
             print(f"fcm first moment = {fcm_moment(1.0, self.alpha, self.k)}")
-        self.s_squared_rv = frac_chi2_mean(self.alpha, self.k)
+        self.s_squared_rv = frac_chi2_mean(self.alpha, self.k)  # this is only for FCM
         gc.collect()
 
     def create_gsc(self):
+        if self.is_fcm2:
+            assert self.is_ratio, "FCM2 only implemented for ratio"
+            return frac_chi2_mean(alpha=self.alpha, k=self.k)
+
         if self.is_ratio:
             return frac_chi_mean(alpha=self.alpha, k=self.k)
         else:
@@ -310,30 +324,37 @@ class FCM_RV_Simulator(GSC_RV_Simulator):
     @lru_cache(maxsize=1000000)
     def std_mu(self, x):
         dz_ratio = 0.0001 if x/self.sigma > 0.2 else None
+
+
         if self.is_ratio:
-            # this is for fmc, but not for inverse
+            # this is for fcm, but not for inverse
             # if self.alpha == 1 and self.k == -1: 
             #     return 1.0/(2 * x**2) - 1.0 
-
-            return fcm_mu_by_f(x, dz_ratio=dz_ratio, alpha=self.alpha, k=self.k)  # this doesn't work when k < 0, sorry
+            if not self.is_fcm2:
+                return fcm_mu_by_f(x, dz_ratio=dz_ratio, alpha=self.alpha, k=self.k)  # this doesn't work when k < 0, sorry
+            else:
+                return fcm_mu_by_f(np.sqrt(x), dz_ratio=dz_ratio, alpha=self.alpha, k=self.k) * 0.5
         else:
             return fcm_inverse_mu_by_f(x, dz_ratio=dz_ratio, alpha=self.alpha, k=-self.k)
             # return super().std_mu(x)
 
-    def pdf_s_squared(self, y):
-        return self.s_squared_rv.pdf(y)  # type: ignore
-
     def validate_fcm_stats(self):
         # when k is large, skewness is small for FCM
-        super().validate_gsc_stats(skip_skew=True, dist_name="FCM")
+        super().validate_gsc_stats(skip_skew=True, dist_name=self.dist_name)
 
     def plot_fcm(self, ax, s_max=None):
-        super().plot_gsc(ax, s_max=s_max, title="FCM histogram (red)")
+        super().plot_gsc(ax, s_max=s_max, title=f"{self.dist_name} histogram (red)")
 
     def plot_mu(self, ax, mu_max=None, s_max=None):
-        super().plot_mu(ax, mu_max=mu_max, s_max=s_max, title="mu used in FCM simulation")
+        super().plot_mu(ax, mu_max=mu_max, s_max=s_max, title=f"mu used in {self.dist_name} simulation")
+
+    # for s = FCM, calculate s^2 = FCM2, as an indirect way to validate the PDF of FCM2
+    def pdf_s_squared(self, y):
+        assert not self.is_fcm2, "This is only for FCM, not FCM2"
+        return self.s_squared_rv.pdf(y)  # type: ignore
 
     def plot_s_squared(self, ax, s2_max=None):
+        assert not self.is_fcm2, "This is only for FCM, not FCM2"
         x2 = self.s_squared
         mn = np.mean(x2)
         sd = np.var(x2)**0.5  # type: ignore
@@ -348,3 +369,39 @@ class FCM_RV_Simulator(GSC_RV_Simulator):
         title = f"FCM S^2 histogram (red, {params})"
         self._plot_setup(ax, title, "s_sqared", x_min=0, x_max=s2_max, ylabel="density (log)")
         ax.set_yscale('log')
+
+
+# ---------------------------------------------------------------------
+class FF_RV_Simulator:
+    def __init__(self, sim: FCM_RV_Simulator, d: int):
+        self.sim = sim
+        self.d = d
+        self.rv = frac_f(alpha=sim.alpha, k=sim.k, d=float(d))
+        self.size = len(sim.s)
+        self.u1 = chi2(df=d).rvs(size=self.size) / float(d)
+        self.u2 = sim.s
+        self.f = self.u1 / self.u2
+
+    def validate_ff_stats(self):
+        m1 = self.rv.moment(1.0)
+        m2 = self.f.mean()
+        err = abs(m1 - m2) / m1
+        print(f"FF first moment: analytic {m1:.3f} simulated {m2:.3f} err {err:.3%}")
+        assert err < 0.1
+       
+    def plot_ff_hist(self, ax):
+        max_x = int(self.f.max() * 0.5)  # the right tail is too sparse for histogram
+        f2 = self.f[ self.f < max_x ]
+        ax.hist(f2, bins=int(max_x)*10, color="red", density=True)
+
+
+    def plot_ff_pdf(self, ax, title, min_x, max_x, assert_max_pdf=1.0):
+        x = np.linspace(min_x, max_x, 200)
+        pdf = self.rv.pdf(x)  # type: ignore
+        assert max(pdf) < assert_max_pdf
+
+        ax.plot(x, pdf, color="blue")
+        ax.set_xlabel('x')
+        ax.set_ylabel('density')
+        ax.set_xlim(0, max_x)
+        ax.set_title(title)

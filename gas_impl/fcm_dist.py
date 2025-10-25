@@ -9,10 +9,10 @@ from scipy.special import gamma, iv
 from scipy.integrate import quad
 
 
-from .wright import wright_fn, mp_gamma, wright_f_fn_by_levy
+from .wright import wright_fn, mp_gamma
+from .wright_levy_asymp import wright_f_fn_by_levy_asymp
 from .mellin import pdf_by_mellin
-from .frac_gamma import frac_gamma_star
-from .stable_count_dist import gen_stable_count, wright_f_fn_by_sc, gsc_q_by_f
+from .frac_gamma_dist import frac_gamma, frac_gamma_star, fg_q_by_f
 from .utils import calc_stats_from_moments
 
 
@@ -107,7 +107,7 @@ class FracChiMean:
         C = fcm_normalization_constant(self.alpha, self.k, self.theta)
         sigma = fcm_sigma(self.alpha, self.k, self.theta)
         z = x / sigma
-        return C/sigma * z**(self.k-2) * wright_f_fn_by_levy(z**self.alpha, alpha=self.alpha * self.g)
+        return C/sigma * z**(self.k-2) * wright_f_fn_by_levy_asymp(z**self.alpha, alpha=self.alpha * self.g)
         
     def cdf_by_gamma_star(self, x):
         assert self.k > 0
@@ -150,20 +150,20 @@ class FracChiMean:
 def fcm_q_by_f(z, dz_ratio, alpha):
     z = z**alpha
     if z == 0: z = 0.001
-    f = wright_f_fn_by_sc(z, alpha/2)
+    f = wright_f_fn_by_levy_asymp(z, alpha/2)
     assert abs(f) > 0, f"ERROR: z = {z}, f = {f} for alpha {alpha}"
     if dz_ratio is None:
         q = wright_fn(-z, -alpha/2, -1.0) / -f
     else:
         dz = z * dz_ratio
-        f_dz =  wright_f_fn_by_sc(z+dz, alpha/2)
+        f_dz =  wright_f_fn_by_levy_asymp(z+dz, alpha/2)
         q = (alpha/2 * z) * (f_dz - f)/dz/f + 1
     return q 
 
 
-def fcm_q_by_gsc_q(z, dz_ratio, alpha):
+def fcm_q_by_fg_q(z, dz_ratio, alpha):
     # this is just for testing
-    return gsc_q_by_f(z**alpha, dz_ratio, alpha/2)
+    return fg_q_by_f(z**alpha, dz_ratio, alpha/2)
 
 
 def fcm_mu_by_f(x, dz_ratio, alpha, k):
@@ -216,8 +216,8 @@ def frac_chi_mean(alpha, k, theta=0.0, loc=0.0, scale=1.0):
     sigma = fcm_sigma(alpha, k, theta)
     assert sigma > 0
 
-    if k > 0:  return gen_stable_count(alpha=alpha*g, sigma=sigma,   d=k-1, p = alpha,  loc=loc, scale=scale)
-    if k < 0:  return gen_stable_count(alpha=alpha*g, sigma=1/sigma, d=k,   p = -alpha, loc=loc, scale=scale)
+    if k > 0:  return frac_gamma(alpha=alpha*g, sigma=sigma,   d=k-1, p = alpha,  loc=loc, scale=scale)
+    if k < 0:  return frac_gamma(alpha=alpha*g, sigma=1/sigma, d=k,   p = -alpha, loc=loc, scale=scale)
     raise Exception(f"ERROR: k is not handled properly")
 
 
@@ -228,8 +228,8 @@ def fcm(alpha, k, theta=0.0, loc=0.0, scale=1.0):  return frac_chi_mean(alpha, k
 def fcm_inverse(alpha, k, theta=0.0):
     g = (alpha - theta) / (2.0 * alpha)  # instead of 0.5
     sigma = fcm_sigma(alpha, k, theta)
-    if k < 0: return gen_stable_count(alpha=alpha*g, sigma=sigma, d=abs(k), p = alpha)
-    if k > 0: return gen_stable_count(alpha=alpha*g, sigma=1/sigma, d=-(k-1), p = -alpha)
+    if k < 0: return frac_gamma(alpha=alpha*g, sigma=sigma, d=abs(k), p = alpha)
+    if k > 0: return frac_gamma(alpha=alpha*g, sigma=1/sigma, d=-(k-1), p = -alpha)
     raise Exception(f"ERROR: k is not handled properly")
 
     
@@ -271,8 +271,8 @@ def frac_chi2_mean(alpha, k, theta=0.0, loc=0.0, scale=1.0):
     sigma = fcm_sigma(alpha, k, theta)
     assert sigma > 0
 
-    if k > 0:  return gen_stable_count(alpha=alpha*g, sigma=sigma**2,   d=(k-1)/2, p = alpha/2,  loc=loc, scale=scale)
-    if k < 0:  return gen_stable_count(alpha=alpha*g, sigma=1/sigma**2, d=k/2,     p = -alpha/2, loc=loc, scale=scale)
+    if k > 0:  return frac_gamma(alpha=alpha*g, sigma=sigma**2,   d=(k-1)/2, p = alpha/2,  loc=loc, scale=scale)
+    if k < 0:  return frac_gamma(alpha=alpha*g, sigma=1/sigma**2, d=k/2,     p = -alpha/2, loc=loc, scale=scale)
     raise Exception(f"ERROR: k is not handled properly")
 
 
@@ -314,7 +314,7 @@ class FCM2:
         C = fcm_normalization_constant(self.alpha, self.k)
         sigma = fcm_sigma(self.alpha, self.k)
         z = x / sigma**2
-        return C/ (2.0 * sigma**2) * z**(self.k/2 - 1.5) * wright_f_fn_by_levy(z**(self.alpha/2), alpha=self.alpha/2)
+        return C/ (2.0 * sigma**2) * z**(self.k/2 - 1.5) * wright_f_fn_by_levy_asymp(z**(self.alpha/2), alpha=self.alpha/2)
 
     def cdf_by_mellin(self, x):
         assert x > 0
@@ -393,7 +393,7 @@ def fcm2_hat(alpha, k):
     k = float(k)
     assert k > 0
     sigma = 0.5
-    return gen_stable_count(alpha=alpha/2, sigma=sigma**2, d=(k-1)/2, p = alpha/2)
+    return frac_gamma(alpha=alpha/2, sigma=sigma**2, d=(k-1)/2, p = alpha/2)
 
 
 def fcm2_hat_mellin_transform(s, alpha: float, k: float):

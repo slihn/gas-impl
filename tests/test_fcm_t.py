@@ -16,7 +16,7 @@ from .frac_gamma import frac_gamma_star
 from .stable_count_dist import gen_stable_count, gsc_normalization_constant, gsc_mu_by_m_series, sv_mu_by_f, gsc_pdf_large_x
 from .gas_dist import gsas, lihn_stable, gsas_pdf_at_zero, gsas_moment
 from .fcm_dist import fcm_moment, frac_chi_mean, FracChiMean, fcm_sigma,\
-    fcm_mu_by_f, fcm_inverse_mu_by_f, fcm_q_by_f, fcm_q_by_gsc_q, fcm_pdf_large_x, fcm_k1_mellin_transform,\
+    fcm_mu_by_f, fcm_inverse_mu_by_f, fcm_q_by_f, fcm_q_by_fg_q, fcm_pdf_large_x, fcm_k1_mellin_transform,\
     frac_chi2_mean
 from .unit_test_utils import *
 from .hankel import *
@@ -403,7 +403,7 @@ class Test_FCM_Mu:
         x = 0.55
         alpha = 1.2
         p1 = fcm_q_by_f(x, dz_ratio=0.0001, alpha=alpha)
-        p2 = fcm_q_by_gsc_q(x, dz_ratio=0.0001, alpha=alpha)
+        p2 = fcm_q_by_fg_q(x, dz_ratio=0.0001, alpha=alpha)
         delta_precise_up_to(p1, p2)
 
 

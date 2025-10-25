@@ -10,6 +10,7 @@ from scipy.stats import norm, levy_stable
 
 from .stable_count_dist import wright_f_fn_by_sc, gsc_q_by_f, mainardi_wright_fn_in_gsc
 from .wright import *
+from .wright_asymp import *
 from .mellin import pdf_by_mellin
 from .unit_test_utils import *
 
@@ -52,9 +53,20 @@ class Test_Wright_F_Fn:
 
 def test_m_wright_vs_exp():
     x = 0.85
-    p = mainardi_wright_fn(x, 0.0) 
-    q = np.exp(-x)
-    delta_precise_up_to(p, q)
+    p1 = np.exp(-x)
+    p2 = mainardi_wright_fn(x, 0.0) 
+    delta_precise_up_to(p1, p2)
+
+    p3 = wright_m_fn_by_levy(x, 0.0) 
+    delta_precise_up_to(p1, p3)
+
+
+def test_m_wright_at_zero_for_all_alphas():
+    alpha = np.linspace(0.0, 1.0, 100)
+    p1 = 1.0/gamma(1-alpha)
+    p2 = np.array([wright_m_fn_by_levy(0.0, a1) for a1 in alpha])  # type: ignore
+    rms = np.sqrt(np.mean((p1 - p2)**2))
+    assert rms < 1e-6, f"rms = {rms} is too large"
 
 
 def test_m_wright_vs_norm():
@@ -80,6 +92,14 @@ def test_m_wright_vs_levy2_0():
     delta_precise_up_to(p, q2)
 
 
+def test_m_wright_for_small_x_and_alpha():
+    for alpha in [0.0, 0.001, 0.002, 0.01, 0.02, 0.1]:
+        for x in [0.0, 0.001, 0.002, 0.01, 0.02, 0.1]:
+            p1 = mainardi_wright_fn(x, alpha, max_n=12)
+            p2 = wright_m_fn_by_levy(x, alpha)
+            delta_precise_up_to(p1, p2, msg_prefix=f"alpha = {alpha}, x = {x}: ")
+
+
 class Test_Wright_Mellin:
     g = 0.45
     x = 0.35
@@ -96,6 +116,31 @@ class Test_Wright_Mellin:
         x = 0.35
         p1 = wright_fn(-x, lam, mu)
         p2 = pdf_by_mellin(x, lambda s: wright_fn_mellin_transform(s, lam, mu))
+        delta_precise_up_to(p1, p2)
+
+    def test_wright_ratio_fn(self):
+        lam = -0.45
+        mu = 0.1
+        x = -0.35
+        p1 = wright_ratio_fn(x, lam, mu, lam)
+        p2 = wright_fn(x, lam, mu+lam) / wright_fn(x, lam, mu)  # type: ignore
+        delta_precise_up_to(p1, p2)
+
+    def test_wright_ratio_fn_list(self):
+        lam = -0.46
+        mu = 0.1
+        x = np.array([-0.35, -0.4, -0.45])
+        p1 = wright_ratio_fn(x, lam, mu, lam)
+        p2 = wright_fn(x, lam, mu+lam) / wright_fn(x, lam, mu)  # type: ignore
+        q = p1 - p2
+        assert np.all(np.abs(q) < 1e-4), f"max diff = {np.max(np.abs(q))} is too large"
+
+    def test_wright_ratio_fn_recurrence(self):
+        lam = -0.44
+        mu = 0.1
+        x = -0.34
+        p1 = lam * x * wright_ratio_fn(x, lam, mu, lam)  # type: ignore
+        p2 = wright_ratio_fn(x, lam, mu, delta=-1.0) + (1-mu)  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_wright_f(self):
@@ -126,6 +171,61 @@ class Test_Wright_Mellin:
         p3 = pdf_by_mellin(self.x, lambda s: wright_m_fn_rescaled_mellin_transform(s, g=0.5))
         delta_precise_up_to(self.p_norm, p3)
 
+    def test_m_wright_moments(self):
+        for n in [0.0, 1.0, 2.0]:
+            p1 = wright_m_fn_moment(n, self.g)
+            p2 = quad(lambda x: x**n * wright_m_fn_by_levy(x, self.g), a=0, b=np.inf, limit=100000)[0]  # type: ignore
+            delta_precise_up_to(p1, p2, msg_prefix=f"n = {n}: by formula")
+
+    def test_m_wright_mean_variance(self):
+        p1 = wright_m_fn_mean(self.g)
+        p2 = 1/gamma(self.g + 1)
+        delta_precise_up_to(p1, p2, msg_prefix=f"mean: by formula")
+
+        p1 = wright_m_fn_std(self.g)**2
+        p2 = 2/gamma(2*self.g + 1) - 1/gamma(self.g + 1)**2
+        delta_precise_up_to(p1, p2, msg_prefix=f"variance: by formula")
+
+
+class Test_M_Wright_Elasticty:
+    alpha = 0.7
+    x = 0.5
+    p1 = wright_m_fn_elasticity_by_levy(x, alpha)
+    
+    def test_series_ratio(self): 
+        p2 = wright_m_fn_elasticity_by_series(self.x, self.alpha)
+        delta_precise_up_to(self.p1, p2)
+    
+    def test_versions(self):
+        for version in [1,2,3]:
+            p2 = wright_fn_elasticity(-self.x, -self.alpha, 1-self.alpha, version=version)
+            delta_precise_up_to(self.p1, p2, msg_prefix=f"version={version}: ")
+
+    def test_series_sum(self):
+        p2 = wright_m_fn_elasticity(self.x, self.alpha)
+        delta_precise_up_to(self.p1, p2)
+
+    def test_one_half(self):
+        x = 0.7  # x needs to be a bit larger
+        p1 = -0.5 * x**2
+        p2 = wright_m_fn_elasticity(x, alpha=0.5)
+        delta_precise_up_to(p1, p2)
+
+        p3 = wright_m_fn_elasticity_by_series(x, alpha=0.5)
+        delta_precise_up_to(p1, p3)
+
+        p4 = wright_m_fn_elasticity_by_levy(x, alpha=0.5)
+        delta_precise_up_to(p1, p4)
+
+    def test_relation_to_f(self):
+        p2 = wright_f_fn_elasticity_by_levy(self.x, self.alpha)
+        delta_precise_up_to(self.p1 + 1.0, p2)  # type: ignore
+
+    def test_relation_to_q(self):
+        p1 = self.p1 * self.alpha + 1.0 + self.alpha  # type: ignore
+        p2 = wright_q_fn(self.x, self.alpha)
+        delta_precise_up_to(p1, p2)
+
 
 # ----------------------------------------------------------------
 class Test_M_Wright_Variants():
@@ -147,6 +247,15 @@ class Test_M_Wright_Variants():
     def test_levy_vs_ts_x2(self):
         q2 = wright_mainardi_fn_ts(self.x2, self.alpha) 
         delta_precise_up_to(self.p2, q2)
+
+    def test_levy_vs_ts_many(self):
+        alpha_list = [ 0.8, 0.9, 0.92, 0.94, 0.96, 0.98, 0.99 ]
+        x_list = [ 0.01, 0.1, 0.2, 0.5, 0.75, 0.9, 0.99, 1.0 ]
+        for alpha in alpha_list:
+            for x in x_list:
+                p1 = wright_mainardi_fn_ts(x, alpha)
+                p2 = wright_m_fn_by_levy(x, alpha)
+                delta_precise_up_to(p1, p2, msg_prefix=f"alpha={alpha}, x={x}: ")
 
 
 class Test_M_Wright_CDF():

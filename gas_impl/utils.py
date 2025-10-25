@@ -1,11 +1,10 @@
-import re
-from click import Option
+
 import numpy as np 
 import pandas as pd
+import mpmath as mp
 import multiprocessing
-import queue
-import time
-from typing import Union, Optional, Callable
+
+from typing import Union, Optional, Callable, List
 from datetime import datetime
 from numpy import polyfit, poly1d  # type: ignore
 
@@ -15,6 +14,56 @@ from scipy.linalg import eigh, inv
 from scipy.interpolate import interp1d
 
 from .int_utils import PDF_2D_Integration, PDF_Marginal_Integration
+
+
+def calc_elasticity(fn, x, d_log_x=0.001, debug=False):
+    if isinstance(x, (list, np.ndarray, pd.Series)):
+        rs = np.array([calc_elasticity(fn, xi, d_log_x=d_log_x) for xi in x])  # type: ignore
+        return make_list_type(rs, x)
+
+    x1 = float(x)
+    x2 = x1 * np.exp(d_log_x) if x1 != 0 else x1 + d_log_x  # x + dx, exceptional usage for x = 0
+    assert isinstance(x1, float) and isinstance(x2, float)
+    m1 = fn(x1)
+    m2 = fn(x2)
+    if isinstance(m1, list):
+        m1 = m1[0]
+    if isinstance(m2, list):
+        m2 = m2[0]
+    elasticity = np.log(m2 / m1) / d_log_x
+    if debug:
+        print(f"x1: {x1}, x2: {x2}, m1: {m1}, m2: {m2}, elasticity: {elasticity}")
+    return elasticity
+
+
+def calc_elasticity_mp(fn, x, d_log_x=mp.mpf(0.001), debug=False):
+    if isinstance(x, (list, np.ndarray, pd.Series)):
+        rs = np.array([calc_elasticity_mp(fn, xi, d_log_x=d_log_x) for xi in x])  # type: ignore
+        return make_list_type(rs, x)
+
+    x1 = mp.mpf(x)
+    x2 = x1 * mp.exp(d_log_x) if x1 != 0 else x1 + d_log_x  # x + dx, exceptional usage for x = 0
+    assert isinstance(x1, mp.mpf) and isinstance(x2, mp.mpf)
+    assert d_log_x > 0, f"ERROR: d_log_x={float(d_log_x)} must be positive"
+    m1 = fn(x1)
+    m2 = fn(x2)
+    if isinstance(m1, list):
+        m1 = m1[0]
+    if isinstance(m2, list):
+        m2 = m2[0]
+    assert m1 != 0 and m2 != 0, f"ERROR: m1={float(m1)} at x1={float(x1)}, m2={float(m2)} at x2={float(x2)} must be non-zero"
+    elasticity = mp.log(m2 / m1) / d_log_x
+    if debug:
+        print(f"x1: {float(x1)}, x2: {float(x2)}, m1: {float(m1)}, m2: {float(m2)}, elasticity: {float(elasticity)}")
+    return elasticity
+
+
+def make_list_type(rs: np.ndarray, x: Union[List, np.ndarray, pd.Series]):
+    if isinstance(x, pd.Series):
+        return pd.Series(rs, index=x.index)
+    if isinstance(x, list):
+        return list(rs)
+    return rs
 
 
 def calc_stats_from_moments(m):
