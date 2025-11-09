@@ -1,4 +1,5 @@
-import numpy as np 
+import numpy as np
+from sympy import O 
 import pandas as pd
 import mpmath as mp
 from functools import lru_cache
@@ -159,19 +160,26 @@ class fractional_gamma_gen(rv_continuous):
         p = float(p)
         assert sigma > 0
 
-        x_pow = (x / sigma) ** (d-1)
+        z = (x / sigma) ** p 
         if alpha != 0.0:
             C = fg_normalization_constant(alpha, sigma, d, p)
-            x_pow = (x / sigma) ** (d-1)
-            f_alpha = wright_f_fn_by_levy_asymp((x / sigma)**p, alpha)
-            return C * x_pow * f_alpha
+            try:
+                f_alpha = wright_f_fn_by_levy_asymp(z, alpha)
+                if f_alpha == 0.0:
+                    return 0.0
+                x_pow_log = np.log(x / sigma) * (d-1)
+                return C * np.exp( x_pow_log + np.log(f_alpha))
+            except OverflowError:
+                return 0.0
         else:
             # this is just generalized gamma: gengamma(a=(d+p)/p, c=p, scale=sigma)
             d = d + p
             C = abs(p) / sigma / gamma(d/p)  # odd case is IG, where d < 0 and p < 0
-            x_pow = (x / sigma) ** (d-1)
-            z = (x / sigma) ** p 
-            return C * x_pow * np.exp(-z) 
+            try:
+                x_pow_log = np.log(x / sigma) * (d-1)
+                return C * np.exp(x_pow_log - z)
+            except OverflowError:
+                return 0.0
 
     def _cdf(self, x, alpha, sigma, d, p, *args, **kwargs):
         # handle array form

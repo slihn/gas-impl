@@ -66,7 +66,7 @@ def make_list_type(rs: np.ndarray, x: Union[List, np.ndarray, pd.Series]):
     return rs
 
 
-def calc_stats_from_moments(m):
+def calc_stats_from_moments(m) -> dict:
     # m can be a list of moments from 0 to 4, or a pd.Series indexed by n-th moment (0 to 4)
     var = m[2] - m[1]**2
     cm3 = m[3] -3*m[1]*m[2] + 2*m[1]**3

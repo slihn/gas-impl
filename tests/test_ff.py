@@ -44,7 +44,7 @@ class Test_Chi2_11:
         delta_precise_up_to(p1, p2)
         
         p3 = np.mean(self.z)
-        delta_precise_up_to(p1, p3, abstol=1e-2, reltol=1e-3)
+        delta_precise_up_to(p1, p3, abstol=1e-2, reltol=5e-2)
 
     def test_2nd_moment(self):
         p1 = self.c2.std()

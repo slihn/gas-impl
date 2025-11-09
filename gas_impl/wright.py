@@ -1,3 +1,4 @@
+from ast import Dict
 from functools import lru_cache
 import numpy as np
 import pandas as pd
@@ -9,7 +10,7 @@ from scipy.optimize import root_scalar
 from scipy.stats import levy_stable, norm
 from typing import Union, List, Optional
 
-from .utils import make_list_type, calc_elasticity
+from .utils import make_list_type, calc_elasticity, calc_stats_from_moments
 from .wright_asymp import wright_m_fn_moment, wright_m_fn_find_x_by_asymp_gg
 
 
@@ -150,6 +151,7 @@ class M_Wright_One_Sided:
     def __init__(self, alpha: float):
         assert 0 <= alpha < 1.0
         self.alpha = alpha
+        self._stats: Optional[dict] = None
     
     def pdf(self, x):
         assert x >= 0  # one-sided
@@ -171,6 +173,24 @@ class M_Wright_One_Sided:
 
     def moment(self, n):
         return gamma(n + 1.0) / gamma(self.alpha * n + 1.0)
+
+    def stats(self):
+        if self._stats is None:
+            m = [self.moment(i) for i in range(0, 5)]
+            self._stats = calc_stats_from_moments(m)
+        return self._stats
+    
+    def mean(self):
+        return self.stats()['mean']
+    
+    def variance(self):
+        return self.stats()['var']
+    
+    def skewness(self):
+        return self.stats()['skew']
+    
+    def kurtosis(self):
+        return self.stats()['kurtosis']
 
 
 # --------------------------------------------
