@@ -1,7 +1,6 @@
 
-# test gsas
+# test fcm and student's t
 
-from re import X
 import numpy as np
 import pandas as pd
 import mpmath as mp
@@ -15,7 +14,7 @@ from .frac_gamma import frac_gamma_star
 
 from .stable_count_dist import gen_stable_count, gsc_normalization_constant, gsc_mu_by_m_series, sv_mu_by_f, gsc_pdf_large_x
 from .gas_dist import gsas, lihn_stable, gsas_pdf_at_zero, gsas_moment
-from .fcm_dist import fcm_moment, frac_chi_mean, FracChiMean, fcm_sigma,\
+from .fcm_dist import fcm_moment, frac_chi_mean, FracChiMean, fcm_sigma, fcm_normalization_constant,\
     fcm_mu_by_f, fcm_inverse_mu_by_f, fcm_q_by_f, fcm_q_by_fg_q, fcm_pdf_large_x, fcm_k1_mellin_transform,\
     frac_chi2_mean
 from .unit_test_utils import *
@@ -193,7 +192,12 @@ class Test_FCM_Moments:
         p1 = self.c_const 
         p2 = self.alpha * np.sqrt(2*k) * gamma((k-1)/2) / gamma((k-1)/self.alpha)
         delta_precise_up_to(p1, p2)
-        
+
+    def test_m1_vs_normalization_constant(self):
+        p1 = self.fcm.moment(1)
+        p2 = fcm_sigma(self.alpha, self.k) * fcm_normalization_constant(self.alpha, self.k) / fcm_normalization_constant(self.alpha, self.k + 1)
+        delta_precise_up_to(p1, p2)
+
     def test_moment_fn(self):
         for n in [1,2,3,4]:
             p1 = self.mnt(float(n))
@@ -241,6 +245,9 @@ class Test_FCM_Mean_LargeK:
         self._mnt(3.0, alpha)
 
 
+# -------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # fcm moments for negative k
 class Test_FCM_Moments_NegK:
     alpha = 0.55  # the smaller alpha, the harder the integral is
@@ -266,7 +273,7 @@ class Test_FCM_Moments_NegK:
             delta_precise_up_to(m1, m2, msg_prefix=f"n={n} ", reltol=0.001)
 
 
-class Test_FCM_ReflectionRule:
+class Test_FCM_Reflection_Rule:
     alpha = 1.5
     k = 2.5
 
@@ -281,10 +288,18 @@ class Test_FCM_ReflectionRule:
         m1a = sigma * gamma((k-1)/2) / gamma(k/2) * gamma(k/alpha) / gamma((k-1)/alpha)
         delta_precise_up_to(self.m1, m1a)
 
+    def test_m1_trivial(self):
+        delta_precise_up_to(self.f2.moment(1), self.m1)
+
+    def test_m1_between_k_and_neg_k(self):
+        p1 = self.f1.moment(1)
+        p2 = 1.0 / self.f2.moment(1)
+        delta_precise_up_to(p1, p2)
+
     def test_pdf_reflection(self):
         x = 1.5
         p1 = self.f1.pdf(x)  # type: ignore
-        p2 = self.f2.pdf(1/x) / (x**3 * self.m1)  # type: ignore
+        p2 = self.f2.pdf(1/x) / (x**3 * self.f2.moment(1))  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_moment_reflection(self):

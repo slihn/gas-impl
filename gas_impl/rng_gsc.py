@@ -11,7 +11,7 @@ from collections import OrderedDict
 from typing import List, Optional
 
 
-from .stable_count_dist import gsc_mu_by_f, gen_stable_count
+from .frac_gamma_dist import fg_mu_by_f, frac_gamma
 from .fcm_dist import frac_chi_mean, frac_chi2_mean, fcm_mu_by_f, fcm_inverse, fcm_inverse_mu_by_f, fcm_moment
 from .ff_dist import frac_f
 from .utils import calc_stats_from_moments
@@ -193,22 +193,26 @@ class GSC_RV_Simulator(RV_Simulator):
         self.d = d
         self.p = p
         self.s_prec = 2  # this affects speed a lot
-        self.gsc = self.create_gsc()  # type: ignore
 
         self.std_mu.cache_clear() 
         mu_fn = lambda x: self.std_mu(x)
         super().__init__(mu_fn, num_years, s_prec=self.s_prec, is_ratio=is_ratio, W1_rv=W1_rv)
+        # It is a bit strange that gsc is created after super().__init__()
+        self.gsc = self.create_gsc()  # type: ignore
+
         if initialize:
-            self.initialize_mu_cache(max_s=self.gsc.moment(1.0)*5.0)
+            m = self.gsc_first_moment()
+            self.initialize_mu_cache(max_s=m*5.0)
             print(f"mu cache initialized")
     
     def create_gsc(self):
-        return gen_stable_count(alpha=self.alpha_gsc, sigma=self.sigma, d=self.d, p=self.p)
+        print(f"creating frac_gamma with alpha={self.alpha_gsc}, sigma={self.sigma}, d={self.d}, p={self.p}")
+        return frac_gamma(alpha=self.alpha_gsc, sigma=self.sigma, d=self.d, p=self.p)
 
     @lru_cache(maxsize=1000000)
     def std_mu(self, x):
         dz_ratio = 0.0001 if x > 0.5 else None
-        return gsc_mu_by_f(x, dz_ratio=dz_ratio, alpha=self.alpha_gsc, sigma=self.sigma, d=self.d, p=self.p)
+        return fg_mu_by_f(x, dz_ratio=dz_ratio, alpha=self.alpha_gsc, sigma=self.sigma, d=self.d, p=self.p)
 
     def gsc_stats(self):
         return gsc_stats(self.gsc)
@@ -235,9 +239,11 @@ class GSC_RV_Simulator(RV_Simulator):
         assert df.loc['error', 'kurtosis'] < 0.20  # type: ignore
         print(f"OK: {dist_name} assertion passed ************** ")
 
-    def _calc_pdf(self, u, pdf) -> pd.DataFrame:
+    def _calc_pdf(self, u, pdf, min_pdf=None) -> pd.DataFrame:
         df = pd.DataFrame({'u': u})
         df['p'] = df.u.parallel_apply(pdf)  # type: ignore
+        if min_pdf is not None:
+            df['p'] = df['p'].where(df['p'] >= min_pdf, np.nan)
         return df
 
     def _plot_setup(self, ax, title, xlabel, x_min, x_max, ylabel="density", legend_loc="upper right"):
@@ -247,19 +253,24 @@ class GSC_RV_Simulator(RV_Simulator):
         ax.legend(loc=legend_loc)
         ax.set_title(title)
 
-    def plot_gsc(self, ax, s_max=None, title="GSC histogram (red)"):
+    def plot_gsc(self, ax, s_max=None, title="GSC histogram (red)") -> pd.DataFrame:
+        gc.collect()
         mn = np.mean(self.s)
         sd = np.var(self.s)**0.5  # type: ignore
         
         if s_max is None: s_max = mn + sd*5
         
         df = self._calc_pdf(np.linspace(0.01, s_max, num=501), self.gsc.pdf)  # type: ignore 
+        gsc_m1 = self.gsc.moment(1.0)  # type: ignore
         ax.plot(df.u, df.p, c="blue", lw=1.5, linestyle='--', label=f"theoretical")
+        ax.axvline(gsc_m1, color='blue', linestyle='--', lw=1.5, label='theoretical mean')
 
         y = ax.hist(self.s, bins=200, color="red", range=(0, s_max), density=True)
         self._plot_setup(ax, title, "s", x_min=0, x_max=s_max)
+        return df
 
     def plot_mu(self, ax, mu_max=None, s_max=None, title="mu used in GSC simulation"):
+        gc.collect()
         df = self.rs[['s', 'mu']].copy()
         df['s_rounded'] = df['s'].apply(lambda x: round(x,2))
         df2 = (
@@ -300,7 +311,7 @@ class FCM_RV_Simulator(GSC_RV_Simulator):
         self.is_ratio = is_ratio
         self.dist_name = "FCM" if not is_fcm2 else "FCM2"
         dist = self.create_gsc()
-        pm = inspect.signature(gen_stable_count._pdf).bind('x', *dist.args, **dist.kwds).arguments
+        pm = inspect.signature(frac_gamma._pdf).bind('x', *dist.args, **dist.kwds).arguments
         print(pm)
         if not self.is_ratio: print("this is a product distribution")
         super().__init__(alpha_gsc=pm['alpha'], sigma=pm['sigma'], d=pm['d'], p=pm['p'], 
@@ -344,9 +355,32 @@ class FCM_RV_Simulator(GSC_RV_Simulator):
 
     def plot_fcm(self, ax, s_max=None):
         super().plot_gsc(ax, s_max=s_max, title=f"{self.dist_name} histogram (red)")
+        gc.collect()
+
+    def plot_fcm_inverse(self, ax, s_max=None, log_scale=False, min_pdf=None) -> pd.DataFrame:
+        gc.collect()
+        fcm_inv = fcm_inverse(alpha=self.alpha, k=self.k)
+        fcm_inv_m1 = fcm_inv.moment(1.0)
+        mn = np.mean(self.s)
+        sd = np.var(self.s)**0.5  # type: ignore
+        if s_max is None: s_max = mn + sd*5
+        
+        df = self._calc_pdf(np.linspace(0.01, s_max, num=501), fcm_inv.pdf, min_pdf=min_pdf)  # type: ignore 
+        ax.plot(df.u, df.p, c="blue", lw=1.5, label=f"theoretical")
+        ax.axvline(fcm_inv_m1, color='red', linestyle='--', lw=1.5, label=f'mean = {fcm_inv_m1:.2f}')
+        if not log_scale:
+            title=f"{self.dist_name} Inverse PDF"
+            self._plot_setup(ax, title, "s", x_min=0, x_max=s_max)
+        else:
+            title=f"{self.dist_name} Inverse PDF (log, min_pdf={min_pdf})"
+            ax.set_yscale('log')
+            self._plot_setup(ax, title, "s", x_min=0, x_max=s_max, ylabel="density (log)")
+
+        return df
 
     def plot_mu(self, ax, mu_max=None, s_max=None):
         super().plot_mu(ax, mu_max=mu_max, s_max=s_max, title=f"mu used in {self.dist_name} simulation")
+        gc.collect()
 
     # for s = FCM, calculate s^2 = FCM2, as an indirect way to validate the PDF of FCM2
     def pdf_s_squared(self, y):
@@ -355,6 +389,7 @@ class FCM_RV_Simulator(GSC_RV_Simulator):
 
     def plot_s_squared(self, ax, s2_max=None):
         assert not self.is_fcm2, "This is only for FCM, not FCM2"
+        gc.collect()
         x2 = self.s_squared
         mn = np.mean(x2)
         sd = np.var(x2)**0.5  # type: ignore

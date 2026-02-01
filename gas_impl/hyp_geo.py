@@ -4,8 +4,8 @@ from scipy.special import gamma, poch
 from scipy.integrate import quad
 from typing import Union, List, Optional
 
-from .wright import wright_fn, mainardi_wright_fn, wright_m_fn_by_levy
-
+from .wright import wright_fn, mainardi_wright_fn
+from .wright_levy_asymp import wright_m_fn_by_levy_asymp, wright_f_fn_by_levy_asymp
 
 # classic result
 def hyp1f1_mellin_transform(s, a: float, b: float):
@@ -81,8 +81,8 @@ def frac_hyp1f1_m(x: Union[float, int, List], alpha: float, b: float, c: float, 
         p = np.array([wright1(k, x) for k in range(start, max_n+1)])
         return sum(p) 
 
-    if len(x) >= 1:
-        return [frac_hyp1f1_m(x1, alpha, b, c, max_n=max_n, start=start) for x1 in x]
+    if len(x) >= 1:  # type: ignore
+        return [frac_hyp1f1_m(x1, alpha, b, c, max_n=max_n, start=start) for x1 in x]  # type: ignore
     raise Exception(f"ERROR: unknown x: {x}")
 
 
@@ -95,7 +95,7 @@ def frac_hyp1f1_m_int(x: Union[float, int, List], alpha: float, b: float, c: flo
         if not by_levy:
             return mainardi_wright_fn(x, alpha)  
         else:
-            return wright_m_fn_by_levy(x, alpha)
+            return wright_m_fn_by_levy_asymp(x, alpha)
         
     if isinstance(x, float):
         g = gamma(c) / gamma(b) / gamma(c-b)
@@ -107,7 +107,7 @@ def frac_hyp1f1_m_int(x: Union[float, int, List], alpha: float, b: float, c: flo
         p = quad(fn1, 0.0, 1.0, limit=1000)[0]
         return p
 
-    if len(x) >= 1:
-        return [frac_hyp1f1_m_int(x1, alpha, b, c) for x1 in x]
+    if len(x) >= 1:  # type: ignore
+        return [frac_hyp1f1_m_int(x1, alpha, b, c) for x1 in x]  # type: ignore
     raise Exception(f"ERROR: unknown x: {x}")
 

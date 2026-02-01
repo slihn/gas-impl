@@ -2,18 +2,19 @@ import numpy as np
 from sympy import O 
 import pandas as pd
 import mpmath as mp
+from typing import Optional
 from functools import lru_cache
 from scipy.stats import rv_continuous, levy_stable, gengamma
 from scipy.special import gamma, loggamma
 
-from pandarallel import pandarallel  # type: ignore
+from pandarallel import pandarallel
 
 pandarallel.initialize(verbose=1)
 
 
 from .wright import wright_fn, mainardi_wright_fn, mainardi_wright_fn_slope, mp_gamma
 from .wright_levy_asymp import wright_f_fn_by_levy_asymp
-from .frac_gamma import frac_gamma_star
+from .frac_gamma import frac_gamma_star, frac_gamma_star_supplementary_by_m
 from .utils import OneSided_RVS
 
 from .frac_gamma import frac_gamma_star
@@ -70,36 +71,39 @@ def fg_mellin_transform(s, alpha: float, sigma: float, d: float, p: float):
 
 # ----------------------------------------------------
 # mu for RV, various implementations
-def fg_q_by_f(z, dz_ratio, alpha):
+
+DEFAULT_DZ = 0.001
+
+def fg_q_by_f(z, dz_ratio: Optional[float], alpha: float):
     # lemma B.3 
     f = wright_f_fn_by_levy_asymp(z, alpha)
-    if dz_ratio is None or z <= 0.001:
-        q_nf = wright_fn(-z, -alpha, -1.0) / (-f)
+    if dz_ratio is None or z <= DEFAULT_DZ:
+        q_nf = wright_fn(-z, -alpha, -1.0) / (-f)  # type: ignore
     else:
         dz = z * dz_ratio
         f_dz =  wright_f_fn_by_levy_asymp(z+dz, alpha)
-        q_nf = -alpha * z * (f_dz - f)/dz / (-f) + 1
+        q_nf = -alpha * z * (f_dz - f)/dz / (-f) + 1  # type: ignore
     return q_nf
     
-def fg_mu_by_f(x, dz_ratio, alpha, sigma, d, p):
+def fg_mu_by_f(x, dz_ratio: Optional[float], alpha, sigma, d, p):
     # lemma B.2
     # if dz_pct is None, the use Wright function, typically good for small x < 0.3
     # dz_ratio is typcally 0.0001
     z = (x/sigma)**p
-    if z == 0: z = 0.001
+    if z == 0: z = DEFAULT_DZ
     q_nf = fg_q_by_f(z, dz_ratio, alpha)
     return p/(2.0*alpha) * q_nf + (d/2.0 - p/(2*alpha))
 
 
-def fg_mu_by_m(x, dz_ratio, alpha, sigma, d, p):
+def fg_mu_by_m(x, dz_ratio: Optional[float], alpha, sigma, d, p):
     # if dz_pct is None, the use Wright function, typically good for small x < 0.3
     # dz_ratio is typcally 0.0001
     # mainardi function is good for alpha away from 1.0, very good for alpha between 0 and 0.5
     z = (x/sigma)**p
-    if z == 0: z = 0.001
+    if z == 0: z = DEFAULT_DZ
     m = mainardi_wright_fn(z, alpha)
     f = m * alpha * z 
-    if dz_ratio is None or z <= 0.001:
+    if dz_ratio is None or z <= DEFAULT_DZ:
         q_nf = wright_fn(-z, -alpha, -1.0) / (-f)
     else:
         dz = z * dz_ratio
@@ -150,9 +154,29 @@ class fractional_gamma_gen(rv_continuous):
             df = pd.DataFrame(data={'x': x, 'alpha': alpha, 'sigma': sigma, 'd': d, 'p': p})
             df['pdf'] = df.parallel_apply(lambda row: self._pdf(row['x'], alpha=row['alpha'], sigma=row['sigma'], d=row['d'], p=row['p']), axis=1)  # type: ignore
             return df['pdf'].tolist()
-            # return [self._pdf(x1, df=df1, alpha=a1) for x1, df1, a1 in zip(x, df, alpha)]
 
-        # integral form
+        # singleton case
+        if x <= 0:  return 0.0
+        log_pdf = self.calc_log_pdf(x, alpha, sigma, d, p)
+        return np.exp(log_pdf)
+
+    def _logpdf(self, x, alpha, sigma, d, p, *args, **kwargs):
+        # handle array form
+        if not isinstance(alpha, float):
+            assert len(alpha) == len(x), f"ERROR: len of alpha and x: {len(alpha)} != {len(x)}"
+            if len(x) == 1:  # trvial case
+                return self._logpdf(x[0], alpha=alpha[0], sigma=sigma[0], d=d[0], p=p[0])
+            
+            df = pd.DataFrame(data={'x': x, 'alpha': alpha, 'sigma': sigma, 'd': d, 'p': p})
+            df['pdf'] = df.parallel_apply(lambda row: self._logpdf(row['x'], alpha=row['alpha'], sigma=row['sigma'], d=row['d'], p=row['p']), axis=1)  # type: ignore
+            return df['pdf'].tolist()
+
+        # singleton case
+        if x <= 0:  return -np.inf
+        return self.calc_log_pdf(x, alpha, sigma, d, p)
+
+    def calc_log_pdf(self, x, alpha, sigma, d, p):
+
         assert isinstance(x, float)
         alpha = float(alpha)
         sigma = float(sigma)
@@ -163,23 +187,26 @@ class fractional_gamma_gen(rv_continuous):
         z = (x / sigma) ** p 
         if alpha != 0.0:
             C = fg_normalization_constant(alpha, sigma, d, p)
+            assert C > 0.0, f"ERROR: normalization constant C must be positive. alpha={alpha}, sigma={sigma}, d={d}, p={p}"
             try:
                 f_alpha = wright_f_fn_by_levy_asymp(z, alpha)
                 if f_alpha == 0.0:
-                    return 0.0
+                    return -np.inf
                 x_pow_log = np.log(x / sigma) * (d-1)
-                return C * np.exp( x_pow_log + np.log(f_alpha))
+                assert isinstance(f_alpha, float)
+                return x_pow_log + np.log(C * f_alpha)
             except OverflowError:
-                return 0.0
+                return -np.inf
         else:
             # this is just generalized gamma: gengamma(a=(d+p)/p, c=p, scale=sigma)
             d = d + p
             C = abs(p) / sigma / gamma(d/p)  # odd case is IG, where d < 0 and p < 0
+            assert C != 0.0, f"ERROR: normalization constant C cannot be zero. alpha={alpha}, sigma={sigma}, d={d}, p={p}"
             try:
                 x_pow_log = np.log(x / sigma) * (d-1)
-                return C * np.exp(x_pow_log - z)
+                return np.log(C) + x_pow_log - z
             except OverflowError:
-                return 0.0
+                return -np.inf
 
     def _cdf(self, x, alpha, sigma, d, p, *args, **kwargs):
         # handle array form
@@ -197,13 +224,22 @@ class fractional_gamma_gen(rv_continuous):
 
         # ---------------------
         assert isinstance(x, float)
+        if x <= 0:  return 0.0
         # s2 = d/(2*p) + 0.5 
         # sigma2 = sigma * 2**(1/p)
         # x2 = (x/sigma2)**(2*p) 
         # return frac_gamma_inc(s2, x2, alpha)
         
         z = x / sigma
-        return z**(d + p) * frac_gamma_star(d/p+1, z**p, alpha=alpha)
+        z_p = z**p
+
+        if z_p <= 1.0:
+            y = z**(d + p) * frac_gamma_star(d/p+1, z**p, alpha=alpha)
+        else:
+            y_supp = z**(d + p) * frac_gamma_star_supplementary_by_m(d/p+1, z**p, alpha=alpha)
+            y = 1.0 - y_supp
+
+        return y if p > 0 else 1.0 - y  # y is CCDF if p < 0
 
     def _argcheck(self, *args, **kwargs):
         # Customize the argument checking here

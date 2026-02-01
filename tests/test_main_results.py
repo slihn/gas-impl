@@ -42,8 +42,8 @@ def test_one_sided_vs_wright_f():
     alpha = 0.45
     levy1 = levy_stable_extremal(alpha)
     x = 0.85
-    p = levy1.pdf(x)
-    q = wright_f_fn(x**(-alpha), alpha) / x
+    p = levy1.pdf(x)  # type: ignore
+    q = wright_f_fn(x**(-alpha), alpha) / x  # type: ignore
     delta_precise_up_to(p, q)
 
 
@@ -61,13 +61,13 @@ class Test_Def_2:
 
     def test_fcm_vs_gsc(self):
         x = self.fcm.moment(1)
-        p1 = self.fcm.pdf(x)
-        p2 = self.gsc.pdf(x)
+        p1 = self.fcm.pdf(x)  # type: ignore
+        p2 = self.gsc.pdf(x)  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_fcm_vs_wright(self):
         x = self.fcm.moment(1)
-        p1 = self.fcm.pdf(x)
+        p1 = self.fcm.pdf(x)  # type: ignore
 
         alpha = self.alpha 
         k = self.k
@@ -94,15 +94,15 @@ class Test_Def_2:
 
     def test_fcm_neg_vs_gsc(self):
         x = self.fcm_neg.moment(1)
-        p1 = self.fcm_neg.pdf(x)
-        p2 = self.gsc_neg.pdf(x)
+        p1 = self.fcm_neg.pdf(x)  # type: ignore
+        p2 = self.gsc_neg.pdf(x)  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_fcm_neg_vs_fcm_pos_reflection(self):
         x = self.fcm_neg.moment(1)
         m1 = fcm_moment(1, self.alpha, self.k)
-        p1 = self.fcm_neg.pdf(x)
-        p2 = self.fcm.pdf(1/x) / x**3 / m1
+        p1 = self.fcm_neg.pdf(x)   # type: ignore
+        p2 = self.fcm.pdf(1/x) / x**3 / m1   # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_fcm_neg_moment_reflection(self):
@@ -151,7 +151,7 @@ class Test_Def_3:
         x = 0.35
         s = 0.73
         p1 = g_skew_v2(x, s, self.alpha, 0.0)
-        p2 = norm().pdf(x*s)
+        p2 = norm().pdf(x*s)   # type: ignore
         delta_precise_up_to(p1, p2)
 
 
@@ -162,8 +162,8 @@ class Test_Def_3_Lemma_1:
         x = 0.5
         chi = frac_chi_mean(alpha=alpha, k=1)
         levy = levy_stable(alpha=alpha, beta=0)
-        p1 = levy.pdf(x)
-        p2 = chi.pdf(x) / 2 
+        p1 = levy.pdf(x)   # type: ignore
+        p2 = chi.pdf(x) / 2   # type: ignore
         p3 = alpha /(x * np.exp(1)) / 2
         delta_precise_up_to(p1, p2, abstol=0.001, reltol=0.01)
         delta_precise_up_to(p1, p3, abstol=0.005, reltol=0.01)
@@ -173,15 +173,15 @@ class Test_Def_3_Lemma_1:
         alpha = 1.0
         x = 0.35
         chi = frac_chi_mean(alpha=alpha, k=1)
-        p1 = chi.pdf(x)
-        p2 = norm().pdf(x) * 2
+        p1 = chi.pdf(x)   # type: ignore
+        p2 = norm().pdf(x) * 2   # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_alpha_2(self):
         alpha = 1.98
         chi = frac_chi_mean(alpha=alpha, k=1)
         df2 = pd.DataFrame(data={'x': np.linspace(0.2, 1.2, num=401)})
-        df2['p1']  = df2['x'].apply(lambda x: chi.pdf(float(x)))
+        df2['p1']  = df2['x'].apply(lambda x: chi.pdf(float(x)))   # type: ignore
 
         dx = df2.x.diff()[1]
         m1 = (df2.p1 * df2.x).sum() * dx
@@ -277,8 +277,8 @@ class Test_Def_5:
         x = 0.25
         for alpha in [0.75, 1.0, 1.25]:
             for k in [3.1, 4.3, 5.2]:
-                p1 = gexppow(alpha=alpha, k=k).pdf(x)
-                p2 = gsas(alpha=alpha, k=-k).pdf(x)
+                p1 = gexppow(alpha=alpha, k=k).pdf(x)  # type: ignore
+                p2 = gsas(alpha=alpha, k=-k).pdf(x)  # type: ignore
                 delta_precise_up_to(p1, p2)
 
 
@@ -291,20 +291,20 @@ class Test_FCM_Inverse_GSaS:
         x = 0.25
         fc = frac_chi_mean(alpha=alpha, k=k)
         
-        def fn1(s):  return s * norm().pdf(x*s) * fc.pdf(s) 
-        def fn2(s):  return 1/s * norm().pdf(x/s) * fc.pdf(1/s) * s**(-2) 
-        def fn3(s):  return 1/s * norm().pdf(x/s) * fcm_inverse_pdf(s, alpha, k) 
-        def fn4(s):  return 1/s * norm().pdf(x/s) * fcm_inverse(alpha, k).pdf(s) 
+        def fn1(s):  return s * norm().pdf(x*s) * fc.pdf(s)   # type: ignore
+        def fn2(s):  return 1/s * norm().pdf(x/s) * fc.pdf(1/s) * s**(-2)   # type: ignore
+        def fn3(s):  return 1/s * norm().pdf(x/s) * fcm_inverse_pdf(s, alpha, k)   # type: ignore
+        def fn4(s):  return 1/s * norm().pdf(x/s) * fcm_inverse(alpha, k).pdf(s)   # type: ignore
 
         p1 = quad(fn1, a=0, b=50.0, limit=10000)[0] 
         p2 = quad(fn2, a=0, b=50.0, limit=10000)[0] 
-        delta_precise_up_to(p1, p2)
+        delta_precise_up_to(p1, p2, msg_prefix="fn1 vs fn2")
 
         p3 = quad(fn3, a=0, b=50.0, limit=10000)[0] 
-        delta_precise_up_to(p1, p3)
+        delta_precise_up_to(p1, p3, msg_prefix="fn1 vs fn3")
 
         p4 = quad(fn4, a=0, b=50.0, limit=10000)[0] 
-        delta_precise_up_to(p1, p4)
+        delta_precise_up_to(p1, p4, msg_prefix="fn1 vs fn4")
 
     def test_gsas_cf_ratio_vs_product(self):
         alpha = 0.8
@@ -313,10 +313,10 @@ class Test_FCM_Inverse_GSaS:
         fc = frac_chi_mean(alpha=alpha, k=k)
         
         c = np.sqrt(2*np.pi)
-        def norm_cf(x): return c * norm().pdf(x)
+        def norm_cf(x): return c * norm().pdf(x)   # type: ignore
         
-        def fn1(s):  return norm_cf(x/s) * fc.pdf(s) 
-        def fn2(s):  return s * norm_cf(x*s) * fc.pdf(1/s) * s**(-3) 
+        def fn1(s):  return norm_cf(x/s) * fc.pdf(s)   # type: ignore
+        def fn2(s):  return s * norm_cf(x*s) * fc.pdf(1/s) * s**(-3)   # type: ignore
 
         p1 = quad(fn1, a=0, b=50.0, limit=10000)[0] 
         p2 = quad(fn2, a=0, b=50.0, limit=10000)[0] 
@@ -327,7 +327,7 @@ class Test_FCM_Inverse_GSaS:
         k = 4.8
         x = 0.25
         p1 = fcm_inverse_pdf(x, alpha, k) 
-        p2 = fcm_inverse(alpha, k).pdf(x)
+        p2 = fcm_inverse(alpha, k).pdf(x)  # type: ignore
         delta_precise_up_to(p1, p2)
 
 
@@ -337,16 +337,16 @@ class Test_FCM_Inverse_GEP:
         k = -4.8
         x = 0.25
         p1 = fcm_inverse_pdf(x, alpha, k) 
-        p2 = fcm_inverse(alpha, k).pdf(x)
+        p2 = fcm_inverse(alpha, k).pdf(x)  # type: ignore
         delta_precise_up_to(p1, p2)
 
     def test_gep_with_inverse_pdf(self):
         alpha = 0.8
         k = 4.8
         x = 0.25
-        p1 = gexppow(alpha, k).pdf(x)
+        p1 = gexppow(alpha, k).pdf(x)  # type: ignore
         
-        def fn2(s):  return norm().pdf(x/s) / s * fcm_inverse_pdf(s, alpha, -k)
+        def fn2(s):  return norm().pdf(x/s) / s * fcm_inverse_pdf(s, alpha, -k)  # type: ignore
         p2 = quad(fn2, a=0, b=50.0, limit=10000)[0] 
         delta_precise_up_to(p1, p2)
 
@@ -354,15 +354,15 @@ class Test_FCM_Inverse_GEP:
         alpha = 0.8
         k = 4.8
         x = 0.25
-        p1 = gexppow(alpha, k).pdf(x)
+        p1 = gexppow(alpha, k).pdf(x)  # type: ignore
         
-        def fn2(s):  return norm().pdf(x/s) / s * fcm_inverse(alpha, -k).pdf(s)
+        def fn2(s):  return norm().pdf(x/s) / s * fcm_inverse(alpha, -k).pdf(s)  # type: ignore
         p2 = quad(fn2, a=0, b=50.0, limit=10000)[0] 
         delta_precise_up_to(p1, p2)
 
     def test_fcm_inverse_equal_stable_vol(self):
         alpha = 0.8
         x = 0.75
-        p1 = fcm_inverse(alpha, k=-1.0).pdf(x)
-        p2 = stable_vol(alpha).pdf(x)
+        p1 = fcm_inverse(alpha, k=-1.0).pdf(x)  # type: ignore
+        p2 = stable_vol(alpha).pdf(x)  # type: ignore
         delta_precise_up_to(p1, p2)

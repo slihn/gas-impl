@@ -9,7 +9,7 @@ from scipy.special import gamma, iv
 from scipy.integrate import quad
 
 
-from .wright import wright_fn, mp_gamma
+from .wright import wright_fn, mp_gamma, levy_stable_extremal
 from .wright_levy_asymp import wright_f_fn_by_levy_asymp
 from .mellin import pdf_by_mellin
 from .frac_gamma_dist import frac_gamma, frac_gamma_star, fg_q_by_f
@@ -21,6 +21,7 @@ from .utils import calc_stats_from_moments
 # --------------------------------------------------------------------------------
 # FCM
 def fcm_sigma(alpha: float, k: float, theta: float = 0.0):
+    # the sign of k is irrelevant
     g = (alpha - theta) / (2.0 * alpha)  # instead of 0.5
     return abs(k)**(g - 1/alpha) * (g**g)
 
@@ -147,21 +148,26 @@ class FracChiMean:
 # --------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------
 # --------------------------------------------------------------------------------
-def fcm_q_by_f(z, dz_ratio, alpha):
+def fcm_q_by_f(z, dz_ratio: Optional[float], alpha: float):
+    assert isinstance(z, float)
+    assert isinstance(alpha, float)
     z = z**alpha
     if z == 0: z = 0.001
     f = wright_f_fn_by_levy_asymp(z, alpha/2)
+    assert isinstance(f, float)
     assert abs(f) > 0, f"ERROR: z = {z}, f = {f} for alpha {alpha}"
     if dz_ratio is None:
-        q = wright_fn(-z, -alpha/2, -1.0) / -f
+        # use ratio formula of the Wright functions directly
+        q = wright_fn(-z, -alpha/2, -1.0) / -f  # type: ignore
     else:
         dz = z * dz_ratio
         f_dz =  wright_f_fn_by_levy_asymp(z+dz, alpha/2)
+        assert isinstance(f_dz, float)
         q = (alpha/2 * z) * (f_dz - f)/dz/f + 1
     return q 
 
 
-def fcm_q_by_fg_q(z, dz_ratio, alpha):
+def fcm_q_by_fg_q(z, dz_ratio: Optional[float], alpha: float):
     # this is just for testing
     return fg_q_by_f(z**alpha, dz_ratio, alpha/2)
 
@@ -209,7 +215,6 @@ def fcm_inverse_mu_by_f(x, dz_ratio, alpha, k):
 def frac_chi_mean(alpha, k, theta=0.0, loc=0.0, scale=1.0):
     alpha = float(alpha)
     k = float(k)
-    k_sign = np.sign(k)  # type: ignore
     assert k != 0, Exception(f"ERROR: k cannot be zero in frac_chi_mean")
 
     g = (alpha - theta) / (2.0 * alpha)  # instead of 0.5
@@ -221,25 +226,99 @@ def frac_chi_mean(alpha, k, theta=0.0, loc=0.0, scale=1.0):
     raise Exception(f"ERROR: k is not handled properly")
 
 
-# alias, make it simple
+# alias, make it simpler to use
 def fcm(alpha, k, theta=0.0, loc=0.0, scale=1.0):  return frac_chi_mean(alpha, k, theta=theta, loc=loc, scale=scale)
 
 
-def fcm_inverse(alpha, k, theta=0.0):
+# Note: use fcm_inverse() as the volatility process for GAS and GEP
+def fcm_inverse(alpha, k, theta=0.0, loc=0.0, scale=1.0):
     g = (alpha - theta) / (2.0 * alpha)  # instead of 0.5
     sigma = fcm_sigma(alpha, k, theta)
-    if k < 0: return frac_gamma(alpha=alpha*g, sigma=sigma, d=abs(k), p = alpha)
-    if k > 0: return frac_gamma(alpha=alpha*g, sigma=1/sigma, d=-(k-1), p = -alpha)
+    if k > 0: return frac_gamma(alpha=alpha*g, sigma=1/sigma, d=-(k-1), p = -alpha, loc=loc, scale=scale)  # \chi^\dagger of \chi, generates GAS
+    if k < 0: return frac_gamma(alpha=alpha*g, sigma=sigma,   d=abs(k), p = alpha,  loc=loc, scale=scale)  # \chi^\dagger_\phi of \chi, generates GEP
     raise Exception(f"ERROR: k is not handled properly")
 
-    
-def fcm_inverse_pdf(x, alpha, k):
+
+def fcm_characteristic(alpha, k, theta=0.0, loc=0.0, scale=1.0):
+    assert k > 0, "ERROR: characteristic function is only defined for k > 0"    
+    return frac_chi_mean(alpha, -k, theta=theta, loc=loc, scale=scale)  # \chi_\phi of \chi
+
+
+def fcm_characteristic_inverse(alpha, k, theta=0.0, loc=0.0, scale=1.0):
+    assert k > 0, "ERROR: characteristic function is only defined for k > 0"    
+    return fcm_inverse(alpha, -k, theta=theta, loc=loc, scale=scale)  # \chi^\dagger_\phi of \chi
+
+
+def fcm_characteristic_pdf(x, alpha, k, use_relation=True):
     # this is not meant to be efficient, just used for proof
-    c = fcm_moment(1.0, alpha, -k)
-    pdf = frac_chi_mean(alpha=alpha, k=-k).pdf(x)  # type: ignore 
-    return pdf * x / c  
+    assert k > 0, "ERROR: only support positive k for fcm_characteristic_pdf"
+    if use_relation:
+        # use relation between characteristic and original fcm pdf
+        m1 = fcm_moment(1.0, alpha, k)
+        pdf = frac_chi_mean(alpha=alpha, k=k).pdf(1/x)  # type: ignore 
+        return pdf * x**(-3) / m1
+    else:
+        # direct formula
+        C = fcm_normalization_constant(alpha, k+1)
+        sigma = fcm_sigma(alpha, k)
+        z = x * sigma
+        return C * sigma**(-k) * x**(-k-1) * wright_f_fn_by_levy_asymp(z**(-alpha), alpha=alpha/2)
 
 
+def fcm_inverse_pdf(x, alpha, k, use_relation=True):
+    # this is not meant to be efficient, just used for proof
+    if use_relation:
+        # use relation between inverse and original fcm pdf, k can be positive or negative
+        m1 = fcm_moment(1.0, alpha, -k)
+        pdf = frac_chi_mean(alpha=alpha, k=-k).pdf(x)  # type: ignore 
+        return pdf * x / m1
+    else:
+        # direct formula
+        assert k > 0, "ERROR: only support positive k for fcm_inverse_pdf"
+        C = fcm_normalization_constant(alpha, k)
+        sigma = fcm_sigma(alpha, k)
+        z = x * sigma
+        return C * sigma**(-k+1) * x**(-k) * wright_f_fn_by_levy_asymp(z**(-alpha), alpha=alpha/2) 
+
+
+def fcm_characteristic_inverse_pdf(x, alpha, k, use_relation=True):
+    # this is not meant to be efficient, just used for proof
+    assert k > 0, "ERROR: only support positive k for fcm_characteristic_inverse_pdf"
+    if use_relation:
+        # use relation between characteristic inverse and original fcm pdf
+        m1 = fcm_moment(1.0, alpha, k)
+        pdf = frac_chi_mean(alpha=alpha, k=k).pdf(x)  # type: ignore 
+        return pdf * x / m1
+    else:
+        # direct formula
+        C = fcm_normalization_constant(alpha, k+1)
+        sigma = fcm_sigma(alpha, k)
+        z = x / sigma
+        return C * sigma**(-k) * x**(k-1) * wright_f_fn_by_levy_asymp(z**(alpha), alpha=alpha/2)
+
+
+def fcm_inverse_pdf_by_extremal(x, alpha, k):
+    # this is not meant to be efficient, just used for proof
+    assert k > 0, "ERROR: only support positive k for fcm_inverse_pdf_by_extremal"
+    C = fcm_normalization_constant(alpha, k)
+    sigma = fcm_sigma(alpha, k)
+    z = x * sigma
+    rv = levy_stable_extremal(alpha/2)
+    pdf = C * sigma**(-k+3) * x**(-k+2) * rv.pdf(z**2)  # type: ignore
+    return pdf
+
+def fcm_characteristic_pdf_by_extremal(x, alpha, k):
+    # this is not meant to be efficient, just used for proof
+    assert k > 0, "ERROR: only support positive k for fcm_inverse_pdf_by_extremal"
+    C = fcm_normalization_constant(alpha, k+1)
+    sigma = fcm_sigma(alpha, k)
+    z = x * sigma
+    rv = levy_stable_extremal(alpha/2)
+    pdf = C * sigma**(-k+2) * x**(-k+1) * rv.pdf(z**2)  # type: ignore
+    return pdf
+
+
+# --------------------------------------------------------------------------------
 def fcm_pdf_large_x(x, alpha, k):
     # this formula doesn't work for small alpha
     alpha = float(alpha)

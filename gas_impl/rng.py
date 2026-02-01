@@ -67,7 +67,7 @@ class Two_Sided_RV_Simulator(FCM_RV_Simulator):
         self.combined_stats_df = df = self.combine_stats(self.stats_of_x(), self.two_sided_stats())
         return df
 
-    def validate_two_sided_stats(self, skip_skew=False):
+    def validate_two_sided_stats(self, skip_skew=False, skip_kurtosis=False):
         df = self.get_combined_stats()
         print(df)
 
@@ -77,7 +77,8 @@ class Two_Sided_RV_Simulator(FCM_RV_Simulator):
         if not self.is_ratio:  # gexppow, product dist
             assert self.k > 0
             assert df.loc['error', 'var']  < 0.05
-            assert df.loc['error', 'kurtosis'] < 0.20
+            if not skip_kurtosis:
+                assert df.loc['error', 'kurtosis'] < 0.20
             print(f"OK: {self.two_sided_name} assertion passed ************** ")
             return
 
@@ -90,7 +91,8 @@ class Two_Sided_RV_Simulator(FCM_RV_Simulator):
             print(f"OK: {self.two_sided_name} assertion skipped, k is too small ************** ")
             return 
 
-        assert df.loc['error', 'kurtosis'] < 0.20
+        if not skip_kurtosis:
+            assert df.loc['error', 'kurtosis'] < 0.20
         print(f"OK: {self.two_sided_name} assertion passed ************** ")
 
     def plot_two_sided(self, ax, x_max=None):
@@ -155,8 +157,8 @@ class GAS_SN_RV_Simulator(Two_Sided_RV_Simulator):
     def get_two_sided_params(self) -> OrderedDict:
         return self.get_two_sided_params_by_pdf(gas_sn._pdf)
 
-    def validate_gas_sn_stats(self, skip_skew=False):
-        self.validate_two_sided_stats(skip_skew=skip_skew)
+    def validate_gas_sn_stats(self, skip_skew=False, skip_kurtosis=False):
+        self.validate_two_sided_stats(skip_skew=skip_skew, skip_kurtosis=skip_kurtosis)
 
     def plot_gas_sn(self, ax, x_max=None):
         self.plot_two_sided(ax, x_max=x_max)
