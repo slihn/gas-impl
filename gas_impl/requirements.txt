@@ -1,0 +1,17 @@
+numpy
+pandas
+# types-numpy
+pandas-stubs
+scipy
+scipy-stubs
+scikit-image
+torchvision  # not sure why I need this ?
+pyro-ppl
+#
+# cmath
+mpmath
+tsquad
+#
+pandarallel
+diskcache
+fredapi
