@@ -479,7 +479,8 @@ class FCM_Px_Plot:
 
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(ylabel)
-        ax.axvline(x=lkc.rv.mean(), color='orange', linestyle='--', label='fcm mean')
+        ax.axvline(x=lkc.x_loc, color='red', linestyle='--', label='Data mean')
+        ax.axvline(x=lkc.rv.mean(), color='orange', linestyle='--', label=f'{self.fcm_label}  mean')
         
         if use_pdf:
             ax.axvline(x=lkc.x_percentile_1, color='orange', linestyle='--', linewidth=0.5, label=f'{self.fcm_label} 1st pctile')
