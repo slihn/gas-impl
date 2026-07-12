@@ -16,8 +16,7 @@ from .wright import wright_fn, mainardi_wright_fn, mainardi_wright_fn_slope, mp_
 from .wright_levy_asymp import wright_f_fn_by_levy_asymp
 from .frac_gamma import frac_gamma_star, frac_gamma_star_supplementary_by_m
 from .utils import OneSided_RVS
-
-from .frac_gamma import frac_gamma_star
+from .tilted_stable import get_tilted_stable3
 
 
 # Note: GSC is renamed to the fractional gamma distribution in 10/2025
@@ -190,6 +189,7 @@ class fractional_gamma_gen(rv_continuous):
             assert C > 0.0, f"ERROR: normalization constant C must be positive. alpha={alpha}, sigma={sigma}, d={d}, p={p}"
             try:
                 f_alpha = wright_f_fn_by_levy_asymp(z, alpha)
+                assert isinstance(f_alpha, float)
                 if f_alpha == 0.0:
                     return -np.inf
                 x_pow_log = np.log(x / sigma) * (d-1)
@@ -269,18 +269,27 @@ class fractional_gamma_gen(rv_continuous):
         else:
             return fg_moment(n, alpha, sigma, d, p)
 
+    # -------------------------------------------------------------
     def _rvs(self, alpha, sigma, d, p, *args, **kwargs):
         size = kwargs.get('size', 1)
         alpha = float(alpha)
         sigma = float(sigma)
         d = float(d)
         p = float(p)
+        return self.kanter_rvs(size, alpha, sigma, d, p)
 
+    def legacy_rvs(self, size: int, alpha, sigma, d, p):
+        # this is very slow
         m1: float = self._munp(1, alpha, sigma, d, p)  # type: ignore
         m2: float = self._munp(2, alpha, sigma, d, p)  # type: ignore
         sd: float = np.sqrt(m2 - m1**2)
         cdf_fn = lambda x: self._cdf(x, alpha=alpha, sigma=sigma, d=d, p=p)
         return OneSided_RVS(mean=m1, sd=sd, cdf_fn=cdf_fn).rvs(size)
 
+    def kanter_rvs(self, size, alpha, sigma, d, p):
+        """Fast sampler matching frac_gamma(alpha, sigma, d, p)."""
+        kanter = get_tilted_stable3(alpha, beta = alpha * d / p, gamma = alpha / p)
+        return kanter.rvs(size) * sigma
+    
 
 frac_gamma = fractional_gamma_gen(name="fractional gamma", a=0, shapes="alpha, sigma, d, p")

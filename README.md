@@ -7,12 +7,16 @@ This package is upgraded to incorporate the skew-normal family in 2025, called G
 The GAS-SN distribution is the most flexible distribution up to date, that can fit data sets with high skewness and kurtosis.
 
 The content is written in a book format, located at [here](docs/fracdist.pdf).
-As of April 2025, the book is in early draft format. More detail will be filled in.
+As of July 2026, the book is in late editing stage.
+However, I just discovered that the fractional gamma distribution is equivalent
+to the inverse power of tilted stable law (Luc Devroye (2009)).
+The book might go through another revision, most likely ceoncept simplification.
 
 This package provides the reference implementation for all the distributions mentioned in the book.
 See the test cases for usage examples. Every function is tested in at least one test cases.
 
-In late 2025, I have decided to call this group of new distribution **The Fractional Distributions**:
+In late 2025, I have decided to call this group of new distributions **The Fractional Distributions**.
+Many classic distributions are generalized into the fractional distributions such as:
 <table>
 <tr>
 <th> classic distribution </th><th> fractional distribution </th>
@@ -25,9 +29,31 @@ In late 2025, I have decided to call this group of new distribution **The Fracti
 </tr><tr>
 <td> univariate skew-t distribution </td><td> univariate GAS-SN distribution (Chapter 12)</td>
 </tr><tr>
+<td> stable / chauchy distributions  </td><td> ditto</td>
+</tr><tr>
 <td> multivariate skew-t distribution </td><td> multivariate elliptical GAS-SN distribution (Chapter 15)</td>
 <tr>
 </table>
+
+## Physical Interpretation
+
+This distribution family has the following parameters and they have physical meanings in the fractional transport problems, representing self-similar anomalous diffusion.
+
+* $\alpha$ is the Levy index that acts as the temporal scaling exponent.
+* $p$ (fractional gamma distribution) acts as the spatial scaling exponent
+
+In the fractional chi/chi2 distribution, $p = \alpha$.
+The space-scale and time-scale are synchronized. The PDF retains its exact shape as it dilates over time.
+This makes the distribution structurally invariant under scaling transformations, 
+establishing a bridge to fractional Brownian motion.
+
+When $\alpha = 1$
+
+* $k$ is the degrees of freedom. It encapsulates the spatial dimension or fractal topology of the network.
+
+
+
+## Demo
 
 To showcase how good the fits are, two univariate fits on VIX and SPX return distributions are presented below:
 <table>

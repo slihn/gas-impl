@@ -13,7 +13,8 @@ from scipy.optimize import root_scalar
 import cmath
 
 
-from .wright import mp_gamma, wright_m_fn_by_levy, wright_m_fn_rescaled_by_levy, M_Wright_One_Sided
+from .wright import mp_gamma, wright_m_fn_by_levy, wright_m_fn_rescaled_by_levy
+from .wright import M_Wright_One_Sided, M_Wright_Two_Sided
 from .mellin import pdf_by_mellin
 from .fcm_dist import frac_chi_mean, fcm_moment
 from .gas_g_skew import *  # legacy import
@@ -159,6 +160,33 @@ def from_feller_to_s1(alpha, theta):  # return beta and scale
 def levy_stable_from_feller(alpha, theta):
     beta, scale = from_feller_to_s1(alpha, theta)
     return levy_stable(alpha=alpha, beta=beta, scale=scale)
+
+
+def levy_stable_rvs_from_ratio(size, alpha, theta, rng=None):
+    # Chapter: The Alpha-Stable Distribution - Review
+    # L_{alpha, theta} ~ M_g / chi_{alpha,1}^{theta}
+    
+    if rng is None:
+        rng = np.random.default_rng()
+
+    size = int(size)
+    g = g_from_theta(alpha, theta)
+    mw_samples = M_Wright_Two_Sided(g).rvs(size, rng=rng)
+    samples = np.empty_like(mw_samples)
+    is_positive = mw_samples > 0.0
+
+    n_pos = int(np.count_nonzero(is_positive))
+    n_neg = int(size - n_pos)
+
+    if n_pos:
+        chi_pos = frac_chi_mean(alpha, 1.0, theta=theta).rvs(n_pos, random_state=rng)
+        samples[is_positive] = mw_samples[is_positive] / chi_pos
+
+    if n_neg:
+        chi_neg = frac_chi_mean(alpha, 1.0, theta=-theta).rvs(n_neg, random_state=rng)
+        samples[~is_positive] = mw_samples[~is_positive] / chi_neg
+
+    return samples
 
 
 # --------------------------------------------------------------------------------
@@ -323,7 +351,9 @@ def gsas_mellin_transform(s, alpha: float, k: float):
 
 
 # LihnStable is a class to handle the stable PDF more elegantly
-# lihn_stable us a bit awkward to deal with the reflective nature of the stable distribution
+
+# the previous lihn_stable is moved to gas_dist_old.py
+# lihn_stable is a bit awkward to deal with the reflective nature of the stable distribution
 class LihnStable:
     slope_sigma_pow_spec_list: List[str] = ['g', 'gr', 'half', 'none', 'side', 'zero']
     

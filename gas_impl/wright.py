@@ -171,6 +171,14 @@ class M_Wright_One_Sided:
             return mainardi_wright_fn_cdf_by_levy(x, self.alpha)
         raise Exception(f"ERROR: CDF unsupported for alpha={self.alpha} and x={x}")
 
+    def rvs(self, size, rng=None):
+        """Sample U0 = S_alpha^{-alpha}, whose density is M_alpha."""
+        if rng is None:
+            rng = np.random.default_rng()
+        stable_rv = levy_stable_extremal(self.alpha)
+        s = stable_rv.rvs(size=size, random_state=rng)
+        return np.power(s, -self.alpha)
+
     def moment(self, n):
         return gamma(n + 1.0) / gamma(self.alpha * n + 1.0)
 
@@ -191,6 +199,55 @@ class M_Wright_One_Sided:
     
     def kurtosis(self):
         return self.stats()['kurtosis']
+
+
+# --------------------------------------------
+class M_Wright_Two_Sided:
+    # rescaled M-Wright function, as a two-sided distribution
+    # the main feature is to use rvs of the one-sided dist above
+    # it can simulate the rvs of levy_stable in conjuction with chi_{alpha,1}
+    def __init__(self, g: float):
+        assert 0 < g < 1.0
+        self.g = g
+    
+    def pdf(self, x):
+        if x <= 0: return wright_m_fn_rescaled_by_levy(-x, 1.0-self.g)  # reflection
+        return wright_m_fn_rescaled_by_levy(x, self.g)
+
+    def rvs(self, size, rng=None):
+        # this rvs only works in the context of multiplying with chibar_{alpha,1}.rvs()
+        if rng is None:
+            rng = np.random.default_rng()
+
+        g = self.g
+        x = np.empty(size, dtype=float)
+        is_positive = rng.random(size) < g
+
+        n_pos = int(np.count_nonzero(is_positive))
+        n_neg = int(x.size - n_pos)
+
+        if n_pos:
+            x[is_positive] = (g**g) * M_Wright_One_Sided(g).rvs(n_pos, rng=rng)
+        if n_neg:
+            g_neg = 1.0 - g
+            x[~is_positive] = -(g_neg**g_neg) * M_Wright_One_Sided(g_neg).rvs(n_neg, rng=rng)
+
+        return x
+
+    def moment(self, n):
+        n_float = float(n)
+        n_int = int(round(n_float))
+        if not np.isclose(n_float, n_int):
+            raise ValueError("raw moments of a two-sided distribution require integer-valued n")
+        if n_int < 0:
+            raise ValueError("negative raw moments are singular at x=0 for this two-sided density")
+
+        g = self.g
+        m_pos = g * (g**g)**n_int * M_Wright_One_Sided(g).moment(n_int)
+        g_neg = 1.0 - g
+        m_neg_abs = g_neg * (g_neg**g_neg)**n_int * M_Wright_One_Sided(g_neg).moment(n_int)
+        sign_neg = -1.0 if n_int % 2 else 1.0
+        return m_pos + sign_neg * m_neg_abs
 
 
 # --------------------------------------------
@@ -215,6 +272,9 @@ def wright_m_fn_rescaled_psi(g, c=0):
 # --------------------------------------------
 class M_Wright_Rescaled_Dist:
     # rescaled M-Wright function, as a two-sided distribution
+    # this is the kernel for Chapter 3: Generalized alpha-Stable distribution
+    # it tries to adjust the two sides so that P(x=0) could be continuous
+    # this effort is considered failed because the skewness causes a lot of problems
     def __init__(self, g: float):
         assert 0 < g < 1.0
         self.g = g
@@ -222,7 +282,9 @@ class M_Wright_Rescaled_Dist:
     def unadjusted_pdf(self, x):
         if x <= 0: return wright_m_fn_rescaled_by_levy(-x, 1.0-self.g)  # reflection
         return wright_m_fn_rescaled_by_levy(x, self.g)
-    
+
+
+    # -----------------------------------------------------------------------------------------
     def pdf(self, x):
         g = self.g
         assert isinstance(x, float)
@@ -230,7 +292,7 @@ class M_Wright_Rescaled_Dist:
             return wright_m_fn_rescaled_by_levy(x, g) / self.A_plus()
         else:
             return wright_m_fn_rescaled_by_levy(-x/self.Sigma(), 1-g) * self.Psi() / self.Sigma() / self.A_plus()
-
+ 
     @lru_cache(maxsize=4)
     def _h(self, c=0.0):
         # c is really for 0 and 1/2
@@ -548,5 +610,3 @@ def mittag_leffler_fn(x: Union[float, int, List], alpha: float, beta: float=1.0,
     if len(x) >= 1:
         return [mittag_leffler_fn(x1, alpha, beta, max_n=max_n, start=start) for x1 in x]
     raise Exception(f"ERROR: unknown x: {x}")
-
-
