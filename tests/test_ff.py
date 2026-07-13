@@ -86,7 +86,7 @@ class Test_FF_GSaS_Square:
         delta_precise_up_to(p1, p2)
         delta_precise_up_to(p1, p3)
 
-    def test_ff_ppdf(self):
+    def test_ff_ppf(self):
         x = 1.5
         p1 = self.rv1.pdf(x)  # type: ignore
         rv9 = FracF_PPF(self.alpha, self.d, self.k)
@@ -156,7 +156,16 @@ class Test_FF_Moments:
     ff2 = frac_f(alpha, d=2.0, k=k)
 
     ff_spy = frac_f(alpha=0.8, d=1.0, k=3.3)
-    
+    NUM_STEPS = 10_000_000
+
+    def test_ff1_rvs_moment(self):
+        x1 = self.ff1.rvs(self.NUM_STEPS)
+        delta_precise_up_to(np.mean(x1), self.ff1.moment(1), abstol=0.01, reltol=0.01)
+
+    def test_ff2_rvs_moment(self):
+        x2 = self.ff2.rvs(self.NUM_STEPS)
+        delta_precise_up_to(np.mean(x2), self.ff2.moment(1), abstol=0.01, reltol=0.01)
+
     def test_ff1_moments(self):
         for n in [1, 2]:
             def _fn(x):  return x**n * self.ff1.pdf(x)  # type: ignore
