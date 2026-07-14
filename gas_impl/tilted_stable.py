@@ -4,7 +4,8 @@
 from typing import Optional
 import numpy as np
 from functools import lru_cache
-from scipy.stats import uniform
+from scipy.special import gamma
+from scipy.stats import levy_stable
 
 
 TILT_GRID_SIZE = 200_000
@@ -39,6 +40,15 @@ def build_tilted_kanter_grid(alpha, beta, grid_size=TILT_GRID_SIZE):
     q_cdf_grid /= q_cdf_grid[-1]  # normalize the total density, so we don't need to know I_beta
     q_cdf_grid[-1] = 1.0
     return q_grid, q_cdf_grid
+
+
+def one_sided_stable(alpha: float):
+    # this is S_alpha, or L_alpha
+    assert 0 < alpha <= 1.0
+    scale = np.power(np.cos(alpha * np.pi / 2.0), 1.0/alpha)  # type: ignore
+    assert isinstance(scale, float), f"ERROR: scale={scale} is not float for alpha={alpha}"
+    assert scale > 0
+    return levy_stable(alpha, beta=1.0, loc=0, scale=scale)
 
 
 class TiltedKanter:
@@ -159,6 +169,17 @@ class TitledStable3(TiltedKanter):
     def rvs(self, size):
         # this is X's rvs
         return np.exp(self.log_rvs(size))
+
+
+class TitledStable(TitledStable3):
+    # X = T_{alpha,beta}, the two-parameter base of the tilted stable law
+    # created for validation, e.g. the PDF formula mentioned in the Introduction
+    def __init__(self, alpha, beta, grid_size=TILT_GRID_SIZE, rng=None):
+        super().__init__(alpha, beta, gamma=-1.0, grid_size=grid_size, rng=rng)
+
+    def pdf(self, x):
+        c = gamma(1 + self.beta) / gamma(1 + self.beta/self.alpha)
+        return c * np.power(x, -self.beta) * one_sided_stable(self.alpha).pdf(x)  # type: ignore
 
 
 @lru_cache(maxsize=100)

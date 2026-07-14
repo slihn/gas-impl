@@ -10,7 +10,7 @@ from scipy.stats import tstd, levy_stable
 from .frac_gamma_dist import frac_gamma
 from .fcm_dist import frac_chi_mean, fcm_sigma, frac_chi2_mean
 from .gas_dist import from_feller_to_s1, g_from_theta, levy_stable_rvs_from_ratio
-from .tilted_stable import InverseStable, get_tilted_stable2, get_tilted_stable3
+from .tilted_stable import InverseStable, TitledStable, get_tilted_stable2, get_tilted_stable3
 from .wright import M_Wright_One_Sided
 from .unit_test_utils import *
 
@@ -228,6 +228,9 @@ class Test_FCM2_NegK_RVS:
     ts3 = get_tilted_stable3(alpha/2, beta, gamma)
     NUM_STEPS = 30_000_000  # it takes a lot more steps to converge !
 
+    fc_no_scale = frac_chi2_mean(alpha, -k, scale=fc_sigma)
+    ts = TitledStable(alpha/2, beta)  # to validate its PDF
+
     def test_fcm_rvs(self):
         x1 = self.fc.rvs(self.NUM_STEPS)  
         delta_precise_up_to(np.mean(x1), self.fc.moment(1), abstol=0.01, reltol=0.01)
@@ -239,6 +242,17 @@ class Test_FCM2_NegK_RVS:
         x3 = self.ts3.rvs(self.NUM_STEPS) / self.fc_sigma * self.scale
         delta_precise_up_to(np.mean(x3), self.fc.moment(1), abstol=0.01, reltol=0.01)
         delta_precise_up_to(tstd(x3), self.fc.std(), abstol=0.01, reltol=0.01)
+
+    def test_ts_pdf(self):
+        def fn0(x): return self.ts.pdf(x)  # type: ignore 
+        m0 = quad(fn0, a=0.0001, b=np.inf, limit=10000)[0]
+        delta_precise_up_to(m0, 1.0, msg_prefix="CDF=1 test")
+
+        # test T_{alpha/2, k/2} is chi2_{alpha,-k}
+        x_list = [1.0, 1.1]
+        for x in x_list:  
+            p1 = self.fc_no_scale.pdf(x)  # type: ignore
+            delta_precise_up_to(p1, self.ts.pdf(x), msg_prefix=f"PDF test x={x}")
 
 
 # -------------------------------------------------------------------------------------
