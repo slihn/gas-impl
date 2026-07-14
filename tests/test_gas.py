@@ -4,6 +4,7 @@
 import imp
 import numpy as np
 import pandas as pd
+import pytest
 from scipy.special import gamma
 from scipy.integrate import quad
 from scipy import stats
@@ -11,7 +12,8 @@ from scipy.stats import norm, cauchy, levy_stable, chi
 
 from .stable_count_dist import stable_count, gen_stable_count
 from .gas_dist import gsas, lihn_stable, LihnStable,\
-    g_skew_v2, g_skew_v2_osc, gsas_pdf_at_zero, gsas_std_pdf_at_zero, gsas_moment, from_feller_to_s1, levy_stable_from_feller
+    g_skew_v2, g_skew_v2_osc, gsas_pdf_at_zero, gsas_std_pdf_at_zero, gsas_moment,\
+    from_feller_to_s1, from_s1_to_feller, levy_stable_from_feller
 from .fcm_dist import fcm_k1_mellin_transform
 from .wright import wright_m_fn_rescaled_mellin_transform, wright_m_fn_rescaled_by_levy
 from .mellin import pdf_by_mellin
@@ -39,6 +41,132 @@ def test_sas_equiv():
     compare_two_rvs(x, sas, sas_gas, min_p=0.1)
 
 
+class Test_Feller_Beta_Conversion:
+    @staticmethod
+    def expected_scale(alpha, theta):
+        return np.cos(theta * np.pi/2) ** (1.0/alpha)
+
+    def test_feller_to_s1_at_zero(self):
+        for alpha in [0.01, 0.8, 1.0, 1.2, 1.99, 2.0]:
+            beta, scale = from_feller_to_s1(alpha, theta=0.0)
+            np.testing.assert_allclose([beta, scale], [0.0, 1.0])
+
+    def test_feller_to_s1_at_theta_boundaries(self):
+        # Below alpha=1 the signs of theta and beta are opposite. Above
+        # alpha=1 they agree, and the theta boundary is 2-alpha.
+        cases = [
+            (0.01, -0.01, 1.0),
+            (0.01, 0.01, -1.0),
+            (0.2, -0.2, 1.0),
+            (0.2, 0.2, -1.0),
+            (0.8, -0.8, 1.0),
+            (0.8, 0.8, -1.0),
+            (1.2, -0.8, -1.0),
+            (1.2, 0.8, 1.0),
+            (1.8, -0.2, -1.0),
+            (1.8, 0.2, 1.0),
+            (1.99, -0.01, -1.0),
+            (1.99, 0.01, 1.0),
+        ]
+        for alpha, theta, expected_beta in cases:
+            beta, scale = from_feller_to_s1(alpha, theta)
+            assert np.isfinite(beta) and np.isfinite(scale)
+            np.testing.assert_allclose(beta, expected_beta, atol=1e-13)
+            np.testing.assert_allclose(
+                scale, self.expected_scale(alpha, theta), rtol=1e-13, atol=1e-13
+            )
+
+    def test_s1_to_feller_at_beta_boundaries(self):
+        cases = [
+            (0.01, -1.0, 0.01),
+            (0.01, 1.0, -0.01),
+            (0.2, -1.0, 0.2),
+            (0.2, 1.0, -0.2),
+            (0.8, -1.0, 0.8),
+            (0.8, 1.0, -0.8),
+            (1.2, -1.0, -0.8),
+            (1.2, 1.0, 0.8),
+            (1.8, -1.0, -0.2),
+            (1.8, 1.0, 0.2),
+            (1.99, -1.0, -0.01),
+            (1.99, 1.0, 0.01),
+        ]
+        for alpha, beta, expected_theta in cases:
+            theta, scale = from_s1_to_feller(alpha, beta)
+            assert np.isfinite(theta) and np.isfinite(scale)
+            np.testing.assert_allclose(theta, expected_theta, atol=1e-13)
+            np.testing.assert_allclose(
+                scale, self.expected_scale(alpha, expected_theta),
+                rtol=1e-13, atol=1e-13,
+            )
+
+    def test_feller_to_s1_round_trip_at_and_near_boundaries(self):
+        for alpha in [0.01, 0.2, 0.8, 0.999999, 1.000001, 1.2, 1.8, 1.99]:
+            theta_limit = min(alpha, 2.0-alpha)
+            theta_values = [
+                -theta_limit,
+                np.nextafter(-theta_limit, 0.0),
+                -theta_limit/2,
+                0.0,
+                theta_limit/2,
+                np.nextafter(theta_limit, 0.0),
+                theta_limit,
+            ]
+            for theta in theta_values:
+                beta, scale = from_feller_to_s1(alpha, theta)
+                theta_back, scale_back = from_s1_to_feller(alpha, beta)
+                assert np.all(np.isfinite([beta, scale, theta_back, scale_back]))
+                np.testing.assert_allclose(theta_back, theta, atol=1e-13)
+                np.testing.assert_allclose(scale_back, scale, rtol=1e-13, atol=1e-13)
+
+    def test_s1_to_feller_round_trip_at_and_near_boundaries(self):
+        beta_values = [
+            -1.0,
+            np.nextafter(-1.0, 0.0),
+            -0.5,
+            0.0,
+            0.5,
+            np.nextafter(1.0, 0.0),
+            1.0,
+        ]
+        for alpha in [0.01, 0.2, 0.8, 0.999999, 1.000001, 1.2, 1.8, 1.99]:
+            for beta in beta_values:
+                theta, scale = from_s1_to_feller(alpha, beta)
+                beta_back, scale_back = from_feller_to_s1(alpha, theta)
+                assert np.all(np.isfinite([theta, scale, beta_back, scale_back]))
+                np.testing.assert_allclose(beta_back, beta, rtol=2e-10, atol=2e-10)
+                np.testing.assert_allclose(scale_back, scale, rtol=2e-10, atol=2e-10)
+
+    def test_requested_interior_example_in_both_directions(self):
+        alpha, theta = 1.2, 0.5
+        expected_beta = 0.324919696232906
+        expected_scale = 0.749153538438341
+
+        beta, scale = from_feller_to_s1(alpha, theta)
+        np.testing.assert_allclose([beta, scale], [expected_beta, expected_scale])
+
+        theta_back, scale_back = from_s1_to_feller(alpha, beta)
+        np.testing.assert_allclose([theta_back, scale_back], [theta, expected_scale])
+
+    def test_nan_inputs_are_rejected(self):
+        with pytest.raises(AssertionError):
+            from_feller_to_s1(np.nan, 0.5)
+        with pytest.raises(AssertionError):
+            from_feller_to_s1(0.8, np.nan)
+        with pytest.raises(AssertionError):
+            from_s1_to_feller(np.nan, 0.5)
+        with pytest.raises(AssertionError):
+            from_s1_to_feller(0.8, np.nan)
+
+    def test_theta_outside_feller_diamond_is_rejected(self):
+        for alpha in [0.2, 0.8, 1.2, 1.8]:
+            theta_limit = min(alpha, 2.0-alpha)
+            outside = theta_limit + 1e-10
+            with pytest.raises(AssertionError):
+                from_feller_to_s1(alpha, outside)
+            with pytest.raises(AssertionError):
+                from_feller_to_s1(alpha, -outside)
+    
 class Test_GAS_Equiv_K1:
     alpha = 0.85
     theta = alpha * 0.25
