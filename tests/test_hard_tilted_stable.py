@@ -10,7 +10,7 @@ from scipy.stats import tstd, levy_stable
 from .frac_gamma_dist import frac_gamma
 from .fcm_dist import frac_chi_mean, fcm_sigma, frac_chi2_mean
 from .gas_dist import from_feller_to_s1, g_from_theta, levy_stable_rvs_from_ratio
-from .tilted_stable import InverseStable, TitledStable, get_tilted_stable2, get_tilted_stable3
+from .tilted_stable import InverseStable, TitledStable, get_tilted_stable2, get_tilted_stable3, PitmanYorRestaurant
 from .wright import M_Wright_One_Sided
 from .unit_test_utils import *
 
@@ -294,3 +294,83 @@ class Test_Levy_Stable_Ratio_RVS:
         x2 = levy_stable_rvs_from_ratio(self.NUM_STEPS, self.alpha, self.theta) 
         self.compare_pdf_hist(x2, "levy_stable ratio rvs:")
 
+
+# -------------------------------------------------------------------------------------
+class Test_Pitman_Yor:
+    alpha = 1.2
+    k = 4.5
+    NUM_CUSTOMERS_LARGE = 20_000_000
+    NUM_CUSTOMERS_SMALL = 100_000
+    NUM_PATHS = 50_000
+
+    fc = frac_chi_mean(alpha, k)
+    fc_scale = fcm_sigma(alpha, k)
+
+    pyr = None # this should be populated later
+    ks = None  # this should be populated later
+
+    def _get_pyr(self, num_customers):
+        return PitmanYorRestaurant(
+            alpha=self.alpha/2,
+            beta=(self.k-1)/2,
+            gamma=0.5,  # FCM
+            num_customers=num_customers)        
+
+    def _generate_py_samples(self):
+        if self.pyr is not None and self.ks is not None:
+            return
+
+        # this is NUM_CUSTOMERS_SMALL x NUM_PATHS
+        self.pyr = self._get_pyr(self.NUM_CUSTOMERS_SMALL)
+        self.ks, self.py_samples, self.kanter_samples = self.pyr.ks_2samp(
+            size=self.NUM_PATHS,
+            return_samples=True,
+        )
+
+    def test_py_samples(self):
+        # KS test, statistic less than 1%
+        self._generate_py_samples()
+        assert isinstance(self.pyr, PitmanYorRestaurant)
+
+        exact_mean = self.pyr.mean()
+        exact_std = self.pyr.std()
+
+        p1 = self.ks.statistic * 100.0  # type: ignore
+        p2 = 1.0
+        assert p1 < 1.0, f"ERROR: ks statistics {p1} pct is larger than {p2}"
+
+        py_mean = self.py_samples.mean()  # type: ignore
+        py_std = self.py_samples.std(ddof=1)  # type: ignore
+
+        kanter_mean = self.kanter_samples.mean()  # type: ignore
+        kanter_std = self.kanter_samples.std(ddof=1)  # type: ignore
+
+        delta_precise_up_to(py_mean, exact_mean, abstol=0.005, reltol=0.005)
+        delta_precise_up_to(kanter_mean, exact_mean, abstol=0.005, reltol=0.005)
+
+        delta_precise_up_to(py_std, exact_std, abstol=0.05, reltol=0.05)
+        delta_precise_up_to(kanter_std, exact_std, abstol=0.05, reltol=0.05)
+
+    def test_fcm_moments(self):
+        self._generate_py_samples()
+
+        fcm_py_samples = self.fc_scale * self.py_samples
+        py_mean2 = fcm_py_samples.mean()
+        py_std2 = fcm_py_samples.std(ddof=1)
+
+        delta_precise_up_to(py_mean2, self.fc.moment(1), abstol=0.005, reltol=0.005)
+        delta_precise_up_to(py_std2, self.fc.std(), abstol=0.05, reltol=0.05)
+     
+    def test_path_ensemble(self):
+        # millions of customers, small amount of paths
+        # this is NUM_CUSTOMERS_LARGE x num_paths
+        num_paths = 200
+        num_checkpoints = 100
+        pyr2 = self._get_pyr(self.NUM_CUSTOMERS_LARGE)
+        expected_terminal_val = pyr2.mean()
+
+        path_df = pyr2.pitman_yor_paths(size=num_paths, num_checkpoints=num_checkpoints)
+        max_customers = path_df.customers.max()
+        path_terminal_avg = path_df.query("customers == @max_customers")['tilted-stable estimate'].mean()
+
+        delta_precise_up_to(path_terminal_avg, expected_terminal_val, abstol=0.05, reltol=0.05)

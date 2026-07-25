@@ -3,9 +3,10 @@
 
 from typing import Optional
 import numpy as np
+import pandas as pd
 from functools import lru_cache
 from scipy.special import gamma
-from scipy.stats import levy_stable
+from scipy.stats import levy_stable, ks_2samp as scipy_ks_2samp
 
 
 TILT_GRID_SIZE = 200_000
@@ -170,6 +171,31 @@ class TitledStable3(TiltedKanter):
         # this is X's rvs
         return np.exp(self.log_rvs(size))
 
+    def negative_moment(self, q):
+        """Return E[T_{alpha,beta}^{-q}] for the underlying tilted stable law."""
+        return (
+            gamma(1.0 + self.beta)
+            / gamma(1.0 + self.beta / self.alpha)
+            * gamma(1.0 + (self.beta + q) / self.alpha)
+            / gamma(1.0 + self.beta + q)
+        )
+
+    def moment(self, order):
+        """Return E[X**order] for X = T_{alpha,beta}^{-gamma}."""
+        return self.negative_moment(order * self.gamma)
+
+    def mean(self):
+        """Return the expected value of X = T_{alpha,beta}^{-gamma}."""
+        return self.moment(1)
+
+    def variance(self):
+        """Return the variance of X = T_{alpha,beta}^{-gamma}."""
+        return self.moment(2) - self.mean() ** 2
+
+    def std(self):
+        """Return the standard deviation of X = T_{alpha,beta}^{-gamma}."""
+        return np.sqrt(self.variance())
+
 
 class TitledStable(TitledStable3):
     # X = T_{alpha,beta}, the two-parameter base of the tilted stable law
@@ -190,3 +216,142 @@ def get_tilted_stable2(alpha, beta):
 @lru_cache(maxsize=100)
 def get_tilted_stable3(alpha, beta, gamma):
     return TitledStable3(alpha, beta, gamma)
+
+
+class PitmanYorRestaurant(TitledStable3):
+    def __init__(self, alpha: float, beta: float, gamma: float, num_customers: int, rng=None):
+        # T_{alpha,beta}^{-gamma} == T_{discount,strength}^{-power}. Hence,
+        #    alpha is discount
+        #    beta is strength
+        #    gamma is power
+        super().__init__(alpha, beta, gamma=gamma, grid_size=TILT_GRID_SIZE, rng=rng)
+
+        if gamma <= 0.0:
+            raise ValueError("gamma must be positive")
+        if int(num_customers) != num_customers or num_customers < 1:
+            raise ValueError("num_customers must be a positive integer")
+        self.num_customers: int = int(num_customers)
+
+    def new_table_probability(self, table_counts, customers):
+        """Return P(K_{n+1}=K_n+1 | K_n) for the Pitman--Yor process.
+
+        ``customers`` is the current restaurant size n, before the next
+        customer is seated. Inputs follow NumPy broadcasting rules.
+        """
+        return (self.beta + self.alpha * table_counts) / (self.beta + customers)
+
+    def alpha_diversity_estimate(self, table_counts, customers=None):
+        """Return the finite-n estimate K_n / n**alpha at the terminal customer count.
+        This approaches T_{alpha,beta}^{-alpha}.
+
+        ``customers`` is default to the terminal number of customers.
+        But if you want to observe transient effect, you can set it to the current restaurant size n.
+        """
+        if customers is None:
+            customers = float(self.num_customers)
+        assert customers is not None
+        return table_counts / customers ** self.alpha
+
+    def tilted_stable_estimate(self, table_counts, customers=None):
+        """Return the finite-n estimate of T_{alpha,beta}^{-gamma}."""
+        diversity = self.alpha_diversity_estimate(table_counts, customers=customers)
+        return diversity ** (self.gamma / self.alpha)
+
+    def pitman_yor_path(self, num_checkpoints: Optional[int]):
+        """Simulate one restaurant and return checkpoint estimates as a DataFrame."""
+        return self.pitman_yor_paths(size=1, num_checkpoints=num_checkpoints).drop(
+            columns="path"
+        )
+
+    def pitman_yor_paths(self, size, num_checkpoints: Optional[int]):
+        """Simulate multiple restaurants together and return their checkpoint estimates.
+
+        Vectorizing the table counts across ``size`` paths avoids running a
+        separate Python customer loop for every path.
+        Checkpoints are geometrically spaced from customer 100 (or the terminal
+        customer count, when smaller) through ``self.num_customers``. Passing
+        ``None`` records every customer on every path and can require substantial
+        memory.
+        This method advances ``self.rng``.
+        """
+        if int(size) != size or size < 1:
+            raise ValueError("size must be a positive integer")
+        size = int(size)
+
+        if num_checkpoints is None:
+            checkpoints = np.arange(1, self.num_customers + 1, dtype=np.int64)
+        elif int(num_checkpoints) != num_checkpoints or num_checkpoints < 1:
+            raise ValueError("num_checkpoints must be a positive integer or None")
+        elif num_checkpoints == 1:
+            checkpoints = np.array([self.num_customers])
+        else:
+            num_checkpoints = int(num_checkpoints)
+            first_checkpoint = min(100, self.num_customers)
+            checkpoints = np.unique(
+                np.geomspace(first_checkpoint, self.num_customers, num_checkpoints).astype(int)
+            )
+
+        checkpoint_count = checkpoints.size
+        checkpoint_table_counts = np.empty((size, checkpoint_count), dtype=np.int64)
+        checkpoint_estimates = np.empty((size, checkpoint_count), dtype=float)
+        checkpoint_index = 0
+        table_counts = np.ones(size, dtype=np.int64)
+        if checkpoints[0] == 1:
+            checkpoint_table_counts[:, 0] = table_counts
+            checkpoint_estimates[:, 0] = self.tilted_stable_estimate(
+                table_counts, customers=1
+            )
+            checkpoint_index = 1
+
+        for customer in range(1, self.num_customers):
+            # the following three lines are the core logic
+            p_new = self.new_table_probability(table_counts, customer)
+            table_counts += self.rng.random(size) < p_new
+            customers = customer + 1
+            # save details only at checkpoints, to save space
+            if checkpoint_index < checkpoint_count and customers == checkpoints[checkpoint_index]:
+                checkpoint_table_counts[:, checkpoint_index] = table_counts
+                checkpoint_estimates[:, checkpoint_index] = self.tilted_stable_estimate(
+                    table_counts, customers=customers
+                )
+                checkpoint_index += 1
+
+        return pd.DataFrame(
+            {
+                "customers": np.tile(checkpoints, size),
+                "tables": checkpoint_table_counts.reshape(-1),
+                "tilted-stable estimate": checkpoint_estimates.reshape(-1),
+                "path": np.repeat(np.arange(1, size + 1), checkpoint_count),
+            },
+            copy=False,
+        )
+
+    def pitman_yor_rvs(self, size):
+        """Approximate ``T_{alpha,beta}^{-gamma}`` using Pitman--Yor table counts."""
+        if int(size) != size or size < 1:
+            raise ValueError("size must be a positive integer")
+
+        # table_counts and samples are array(size)
+        # both are returned to allow maximum usage flexiblity
+        table_counts = np.ones(int(size), dtype=np.int64)
+
+        # `customer` is the current restaurant size.  The update seats customer+1.
+        for customer in range(1, self.num_customers):
+            p_new = self.new_table_probability(table_counts, customer)
+            table_counts += self.rng.random(table_counts.size) < p_new
+
+        samples = self.tilted_stable_estimate(table_counts)
+        return samples, table_counts
+
+    def ks_2samp(self, size, return_samples: bool = False):
+        """Compare the Pitman--Yor and Kanter samplers with a two-sample KS test.
+
+        ``size`` is the number of paths/samples generated by each method.
+        Return both sample arrays when they are needed for further diagnostics.
+        """
+        py_samples, _ = self.pitman_yor_rvs(size=size)
+        kanter_samples = self.rvs(size)  # this is TitledStable3's rvs
+        ks = scipy_ks_2samp(py_samples, kanter_samples)
+        if return_samples:
+            return ks, py_samples, kanter_samples
+        return ks
