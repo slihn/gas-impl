@@ -322,7 +322,7 @@ class Test_Pitman_Yor:
 
         # this is NUM_CUSTOMERS_SMALL x NUM_PATHS
         self.pyr = self._get_pyr(self.NUM_CUSTOMERS_SMALL)
-        self.ks, self.py_samples, self.kanter_samples = self.pyr.ks_2samp(
+        self.ks, self.py_samples, self.kanter_samples = self.pyr.ks_kanter_crp(
             size=self.NUM_PATHS,
             return_samples=True,
         )
@@ -374,3 +374,20 @@ class Test_Pitman_Yor:
         path_terminal_avg = path_df.query("customers == @max_customers")['tilted-stable estimate'].mean()
 
         delta_precise_up_to(path_terminal_avg, expected_terminal_val, abstol=0.05, reltol=0.05)
+
+    def test_stick_breaking_rvs(self):
+        """Fails when the GEM beta parameters or residual scaling are incorrect."""
+        pyr = self._get_pyr(1)
+        ks, stick_samples, kanter_samples = pyr.ks_kanter_stick(
+            size=40_000,
+            num_breaks=2_000,
+            return_samples=True,
+        )
+        stick_mean = stick_samples.mean()  # type: ignore
+        stick_std = stick_samples.std(ddof=1)  # type: ignore
+
+        assert np.all(np.isfinite(stick_samples))
+        assert np.all(np.isfinite(kanter_samples))
+        assert np.isclose(stick_mean, pyr.mean(), rtol=0.005)
+        assert np.isclose(stick_std, pyr.std(), rtol=0.02)
+        assert ks.statistic < 0.01  # type: ignore
