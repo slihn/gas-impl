@@ -52,6 +52,27 @@ def one_sided_stable(alpha: float):
     return levy_stable(alpha, beta=1.0, loc=0, scale=scale)
 
 
+def one_sided_stable_pdf(x, alpha: float):
+    """Return the positive alpha-stable density with Laplace transform exp(-s**alpha)."""
+    assert 0 < alpha <= 1.0
+    return one_sided_stable(alpha).pdf(x)  # type: ignore
+
+
+def inverse_stable_pdf(x, alpha: float):
+    """Return the M-Wright density of X = S_alpha**(-alpha), for x > 0.
+
+    If ``f_alpha`` is the positive stable density, the transformation
+    ``S_alpha = x**(-1/alpha)`` gives
+
+        M_alpha(x) = f_alpha(x**(-1/alpha))
+                     * x**(-1/alpha - 1) / alpha.
+    """
+    assert 0 < alpha <= 1.0
+    stable_x = np.power(x, -1.0 / alpha)
+    jacobian = np.power(x, -1.0 / alpha - 1.0) / alpha
+    return jacobian * one_sided_stable_pdf(stable_x, alpha)
+
+
 class TiltedKanter:
     def __init__(self, alpha, beta, grid_size=TILT_GRID_SIZE, rng=None):
         self.alpha: float = float(alpha)
@@ -124,6 +145,10 @@ class InverseStable:
         log_u = (1.0 - self.alpha) * np.log(e) - self.alpha * zolotarev_log_A(q, self.alpha)
         return np.exp(log_u)
 
+    def pdf(self, x):
+        """Return the density of X = T_alpha**(-alpha), for x > 0."""
+        return inverse_stable_pdf(x, self.alpha)
+
 
 # ---------------------------------------------------------------------
 class TitledStable2(TiltedKanter):
@@ -148,6 +173,12 @@ class TitledStable2(TiltedKanter):
         log_u = self.log_U_rvs(size)
         return sigma * np.exp(log_u / p)  # X
 
+    def pdf(self, x):
+        """Return the density of U = T_{alpha,beta}**(-alpha), for x > 0."""
+        c = gamma(1.0 + self.beta) / gamma(1.0 + self.beta / self.alpha)
+        tilt = np.power(x, self.beta / self.alpha)
+        return c * tilt * inverse_stable_pdf(x, self.alpha)
+
 
 class TitledStable3(TiltedKanter):
     def __init__(self, alpha, beta, gamma, grid_size=TILT_GRID_SIZE, rng=None):
@@ -170,6 +201,24 @@ class TitledStable3(TiltedKanter):
     def rvs(self, size):
         # this is X's rvs
         return np.exp(self.log_rvs(size))
+
+    def pdf(self, x):
+        """Return the density of X = T_{alpha,beta}**(-gamma), for x > 0."""
+        if self.gamma == 0:
+            raise ValueError("gamma must be non-zero for a continuous density")
+        c = gamma(1.0 + self.beta) / gamma(1.0 + self.beta / self.alpha)
+        inverse_stable_x = np.power(x, self.alpha / self.gamma)
+        jacobian = (
+            abs(self.alpha / self.gamma)
+            * np.power(x, self.alpha / self.gamma - 1.0)
+        )
+        tilt = np.power(inverse_stable_x, self.beta / self.alpha)
+        return (
+            c
+            * tilt
+            * jacobian
+            * inverse_stable_pdf(inverse_stable_x, self.alpha)
+        )
 
     def negative_moment(self, q):
         """Return E[T_{alpha,beta}^{-q}] for the underlying tilted stable law."""
@@ -205,7 +254,7 @@ class TitledStable(TitledStable3):
 
     def pdf(self, x):
         c = gamma(1 + self.beta) / gamma(1 + self.beta/self.alpha)
-        return c * np.power(x, -self.beta) * one_sided_stable(self.alpha).pdf(x)  # type: ignore
+        return c * np.power(x, -self.beta) * one_sided_stable_pdf(x, self.alpha)
 
 
 @lru_cache(maxsize=100)
@@ -218,6 +267,9 @@ def get_tilted_stable3(alpha, beta, gamma):
     return TitledStable3(alpha, beta, gamma)
 
 
+# ----------------------------------------------
+# ----------------------------------------------
+# ----------------------------------------------
 class PitmanYorRestaurant(TitledStable3):
     def __init__(self, alpha: float, beta: float, gamma: float, num_customers: int, rng=None):
         # T_{alpha,beta}^{-gamma} == T_{discount,strength}^{-power}. Hence,

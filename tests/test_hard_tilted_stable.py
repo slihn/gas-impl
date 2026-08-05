@@ -48,6 +48,21 @@ class Test_M_Wright_RVS:
         delta_precise_up_to(np.mean(x3), self.mw.moment(1), abstol=0.001, reltol=0.001)
         delta_precise_up_to(tstd(x3), np.sqrt(self.mw.variance()), abstol=0.001, reltol=0.001)
 
+    def test_pdf(self):
+        """Fails when an inverse-stable density no longer equals M-Wright."""
+        for x in [1.0, 1.1]:
+            expected = self.mw.pdf(x)
+            for name, rv in [
+                ("InverseStable", self.inv_stable),
+                ("TitledStable2", self.ts2_mw),
+                ("TitledStable3", self.ts3_mw),
+            ]:
+                delta_precise_up_to(
+                    rv.pdf(x),
+                    expected,
+                    msg_prefix=f"{name} PDF test x={x}",
+                )
+
 
 # -------------------------------------------------------------------------------------
 class Test_Frac_Gamma_RVS:
@@ -79,6 +94,32 @@ class Test_Frac_Gamma_RVS:
         delta_precise_up_to(np.mean(x3), self.fg.moment(1), abstol=0.001, reltol=0.001)
         delta_precise_up_to(tstd(x3), self.fg.std(), abstol=0.001, reltol=0.001)
 
+    def test_ts2_pdf(self):
+        """Fails when the fractional-gamma power transformation is incorrect."""
+        for x in [1.0, 1.1]:
+            u = (x / self.sigma) ** self.p
+            jacobian = (
+                abs(self.p)
+                / self.sigma
+                * (x / self.sigma) ** (self.p - 1.0)
+            )
+            actual = self.ts2.pdf(u) * jacobian
+            delta_precise_up_to(
+                actual,
+                self.fg.pdf(x),  # type: ignore
+                msg_prefix=f"TitledStable2 PDF test x={x}",
+            )
+    
+    def test_ts3_pdf(self):
+        """Fails when scaling TitledStable3 does not produce fractional gamma."""
+        for x in [1.0, 1.1]:
+            actual = self.ts3.pdf(x / self.sigma) / self.sigma
+            delta_precise_up_to(
+                actual,
+                self.fg.pdf(x),  # type: ignore
+                msg_prefix=f"TitledStable3 PDF test x={x}",
+            )
+
 
 # -------------------------------------------------------------------------------------
 class Test_FCM_Alpha1_RVS:
@@ -104,6 +145,13 @@ class Test_FCM_Alpha1_RVS:
         x3 = self.ts3.rvs(self.NUM_STEPS) * self.fc_sigma * self.scale
         delta_precise_up_to(np.mean(x3), self.fc.moment(1), abstol=0.001, reltol=0.001)
         delta_precise_up_to(tstd(x3), self.fc.std(), abstol=0.001, reltol=0.001)
+
+    def test_pdf(self):
+        """Fails when the k=1 FCM scale transformation is incorrect."""
+        factor = self.fc_sigma * self.scale
+        for x in [1.0, 1.1]:
+            actual = self.ts3.pdf(x / factor) / factor
+            delta_precise_up_to(actual, self.fc.pdf(x), msg_prefix=f"PDF test x={x}")  # type: ignore
 
 
 class Test_FCM_Alpha1_Theta_RVS:
@@ -134,6 +182,13 @@ class Test_FCM_Alpha1_Theta_RVS:
         delta_precise_up_to(np.mean(x3), self.fc.moment(1), abstol=0.001, reltol=0.001)
         delta_precise_up_to(tstd(x3), self.fc.std(), abstol=0.001, reltol=0.001)
 
+    def test_pdf(self):
+        """Fails when the skewed k=1 FCM scale transformation is incorrect."""
+        factor = self.fc_sigma * self.scale
+        for x in [1.0, 1.1]:
+            actual = self.ts3.pdf(x / factor) / factor
+            delta_precise_up_to(actual, self.fc.pdf(x), msg_prefix=f"PDF test x={x}")  # type: ignore
+
 
 # -------------------------------------------------------------------------------------
 class Test_FCM_RVS:
@@ -161,6 +216,13 @@ class Test_FCM_RVS:
         delta_precise_up_to(np.mean(x3), self.fc.moment(1), abstol=0.001, reltol=0.001)
         delta_precise_up_to(tstd(x3), self.fc.std(), abstol=0.001, reltol=0.001)
 
+    def test_pdf(self):
+        """Fails when the positive-k FCM scale transformation is incorrect."""
+        factor = self.fc_sigma * self.scale
+        for x in [1.0, 1.1]:
+            actual = self.ts3.pdf(x / factor) / factor
+            delta_precise_up_to(actual, self.fc.pdf(x), msg_prefix=f"PDF test x={x}")  # type: ignore
+
 
 # -------------------------------------------------------------------------------------
 class Test_FCM_NegK_RVS:
@@ -186,6 +248,13 @@ class Test_FCM_NegK_RVS:
         x3 = self.ts3.rvs(self.NUM_STEPS) / self.fc_sigma * self.scale
         delta_precise_up_to(np.mean(x3), self.fc.moment(1), abstol=0.001, reltol=0.001)
         delta_precise_up_to(tstd(x3), self.fc.std(), abstol=0.001, reltol=0.001)
+
+    def test_pdf(self):
+        """Fails when the negative-k FCM inverse scaling is incorrect."""
+        factor = self.scale / self.fc_sigma
+        for x in [1.0, 1.1]:
+            actual = self.ts3.pdf(x / factor) / factor
+            delta_precise_up_to(actual, self.fc.pdf(x), msg_prefix=f"PDF test x={x}")  # type: ignore
 
 
 # -------------------------------------------------------------------------------------
@@ -213,6 +282,13 @@ class Test_FCM2_RVS:
         x3 = self.ts3.rvs(self.NUM_STEPS) * self.fc_sigma * self.scale
         delta_precise_up_to(np.mean(x3), self.fc.moment(1), abstol=0.001, reltol=0.001)
         delta_precise_up_to(tstd(x3), self.fc.std(), abstol=0.001, reltol=0.001)
+
+    def test_pdf(self):
+        """Fails when the positive-k FCM-squared scaling is incorrect."""
+        factor = self.fc_sigma * self.scale
+        for x in [1.0, 1.1]:
+            actual = self.ts3.pdf(x / factor) / factor
+            delta_precise_up_to(actual, self.fc.pdf(x), msg_prefix=f"PDF test x={x}")  # type: ignore
 
 
 # -------------------------------------------------------------------------------------
@@ -253,6 +329,13 @@ class Test_FCM2_NegK_RVS:
         for x in x_list:  
             p1 = self.fc_no_scale.pdf(x)  # type: ignore
             delta_precise_up_to(p1, self.ts.pdf(x), msg_prefix=f"PDF test x={x}")
+
+    def test_pdf(self):
+        """Fails when the negative-k FCM-squared inverse scaling is incorrect."""
+        factor = self.scale / self.fc_sigma
+        for x in [1.0, 1.1]:
+            actual = self.ts3.pdf(x / factor) / factor
+            delta_precise_up_to(actual, self.fc.pdf(x), msg_prefix=f"PDF test x={x}")  # type: ignore
 
 
 # -------------------------------------------------------------------------------------
