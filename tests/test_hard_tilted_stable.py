@@ -382,9 +382,9 @@ class Test_Levy_Stable_Ratio_RVS:
 class Test_Pitman_Yor:
     alpha = 1.2
     k = 4.5
-    NUM_CUSTOMERS_LARGE = 20_000_000
-    NUM_CUSTOMERS_SMALL = 100_000
-    NUM_PATHS = 50_000
+    NUM_CUSTOMERS_LARGE = 40_000_000
+    NUM_CUSTOMERS_SMALL = 200_000
+    NUM_PATHS = 100_000
 
     fc = frac_chi_mean(alpha, k)
     fc_scale = fcm_sigma(alpha, k)
@@ -447,7 +447,7 @@ class Test_Pitman_Yor:
     def test_path_ensemble(self):
         # millions of customers, small amount of paths
         # this is NUM_CUSTOMERS_LARGE x num_paths
-        num_paths = 200
+        num_paths = 1000
         num_checkpoints = 100
         pyr2 = self._get_pyr(self.NUM_CUSTOMERS_LARGE)
         expected_terminal_val = pyr2.mean()
@@ -462,7 +462,7 @@ class Test_Pitman_Yor:
         """Fails when the GEM beta parameters or residual scaling are incorrect."""
         pyr = self._get_pyr(1)
         ks, stick_samples, kanter_samples = pyr.ks_kanter_stick(
-            size=40_000,
+            size=self.NUM_PATHS,
             num_breaks=2_000,
             return_samples=True,
         )
