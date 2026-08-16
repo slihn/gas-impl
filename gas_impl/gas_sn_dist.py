@@ -11,8 +11,14 @@ from scipy.integrate import quad
 from scipy.special import gamma, owens_t
 from scipy.optimize import minimize
 
-from .fcm_dist import frac_chi_mean, fcm_moment, fcm_mellin_transform
-from .gas_dist import gsas_squared
+from .fcm_dist import (
+    frac_chi_mean,
+    fcm_mellin_transform,
+    fcm_moment,
+    fcm_normalization_constant,
+    fcm_sigma,
+)
+from .gas_dist import gsas, gsas_squared
 from .wright import norm_mellin_transform
 from .mellin import pdf_by_mellin
 from .utils import calc_stats_from_moments
@@ -590,3 +596,59 @@ class GAS_SN(GAS_SN_Std, Univariate_Skew_LocScale):
     def rvs(self, size: int):
        z = self._rvs(size=size)
        return z * self.scale + self.loc
+
+
+
+class GAS_SN_TAIL:
+    A = 1.98
+    B = 1.135
+
+    def __init__(self, alpha, k, beta):
+        self.alpha = alpha
+        self.k = k
+        self.beta = beta
+
+        self.delta = beta / np.sqrt(1.0 + beta**2)
+        self.mu = self.A * self.delta / np.sqrt(2.0)
+        self.gsas_rv = gsas(self.alpha, self.k)
+
+        sigma_k = fcm_sigma(alpha, k)
+        sigma_k_minus_1 = fcm_sigma(alpha, k - 1)
+        C_alpha_k = fcm_normalization_constant(alpha, k)
+        C_alpha_k_minus_1 = fcm_normalization_constant(alpha, k - 1)
+
+        self.q = np.sqrt(1.0 + beta**2) * sigma_k / sigma_k_minus_1
+        self.G = (
+            np.sqrt(2.0 / np.pi)
+            * C_alpha_k
+            / (self.B * sigma_k_minus_1 * C_alpha_k_minus_1)
+        )
+
+    def pdf_left_tail(self, x):
+        assert x < 0, f"ERROR: x = {x} must be negative"
+        assert self.beta > 0, f"ERROR: beta = {self.beta} must be positive"
+
+        unshifted = shifted_gsas_pdf(self.q * x, alpha=self.alpha, k=self.k - 1)
+        shifted = shifted_gsas_pdf(
+            self.q * x,
+            alpha=self.alpha,
+            k=self.k - 1,
+            kernel_shift=self.mu,
+        )
+        return self.G / (self.beta * x) * (np.exp(self.mu**2 / 2.0) * shifted - unshifted)
+
+    def gsas_pdf(self, x):
+        return self.gsas_rv.pdf(x)  # type: ignore
+
+    def pdf(self, x):
+        if self.beta < 0:
+            reflected = GAS_SN_TAIL(self.alpha, self.k, -self.beta)
+            return reflected.pdf(-x)
+        if x == 0:
+            return self.gsas_pdf(0.0)
+        if self.beta == 0:
+            return self.gsas_pdf(x)
+        if x > 0:
+            return 2.0 * self.gsas_pdf(x) - self.pdf_left_tail(-x)
+        return self.pdf_left_tail(x)
+    

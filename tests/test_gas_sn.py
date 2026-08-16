@@ -7,7 +7,8 @@ from scipy.optimize import minimize
 from .unit_test_utils import *
 
 from .fcm_dist import frac_chi_mean
-from .gas_sn_dist import gas_sn, SN_Std, SN, ST_Std, ST, GAS_SN_Std, GAS_SN, pdf_sqare, gas_sn_mellin_transform, owens_t_mellin_transform
+from .gas_sn_dist import gas_sn, SN_Std, SN, ST_Std, ST, GAS_SN_Std, GAS_SN, GAS_SN_TAIL,\
+    pdf_sqare, gas_sn_mellin_transform, owens_t_mellin_transform
 
 
 class Test_PDF_Square:
@@ -415,3 +416,43 @@ class Test_GAS_SN_RVS:
             self.z_ls2, tol,
             msg_prefix= lambda i: f"GAS_SN_RVS {i+1}-th mvsk Z_ls2",
             abstol_max=1.0)
+
+
+class Test_GAS_SN_TAIL:
+    alpha = 1.35
+    k = 4.1
+    beta = 1.2
+
+    g = GAS_SN_TAIL(alpha, k, beta)
+    g2 = gas_sn(alpha, k, beta)
+
+    def test_pdf_approximates_exact_distribution(self):
+        """Fail when the tail approximation exceeds 1% error on either side."""
+        for x in [-4.0, -3.0, -2.0, 4.0, 3.0, 2.0]:
+            exact = self.g2.pdf(x)  # type: ignore
+            approx = self.g.pdf(x)
+            delta_precise_up_to(exact, approx, reltol=1e-2, msg_prefix=f"x={x}")
+
+        exact_at_zero = self.g2.pdf(0.0)  # type: ignore
+        approx_at_zero = self.g.pdf(0.0)
+        delta_precise_up_to(exact_at_zero, approx_at_zero, msg_prefix="x=0")
+
+
+class Test_GAS_SN_TAIL_V2:
+    alpha = 1.1
+    k = 3.9
+    beta = -1.8
+
+    g = GAS_SN_TAIL(alpha, k, beta)
+    g2 = gas_sn(alpha, k, beta)
+
+    def test_pdf_approximates_exact_distribution(self):
+        """Fail when the tail approximation exceeds 1% error on either side."""
+        for x in [-4.0, -3.0, -2.0, 4.0, 3.0, 2.0]:
+            exact = self.g2.pdf(x)  # type: ignore
+            approx = self.g.pdf(x)
+            delta_precise_up_to(exact, approx, reltol=1e-2, msg_prefix=f"x={x}")
+
+        exact_at_zero = self.g2.pdf(0.0)  # type: ignore
+        approx_at_zero = self.g.pdf(0.0)
+        delta_precise_up_to(exact_at_zero, approx_at_zero, msg_prefix="x=0")
