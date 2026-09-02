@@ -276,7 +276,8 @@ class fractional_gamma_gen(rv_continuous):
         sigma = float(sigma)
         d = float(d)
         p = float(p)
-        return self.kanter_rvs(size, alpha, sigma, d, p)
+        # scipy resolves random_state and passes it here; forward it so a caller's seed is honored
+        return self.kanter_rvs(size, alpha, sigma, d, p, rng=kwargs.get('random_state'))
 
     def legacy_rvs(self, size: int, alpha, sigma, d, p):
         # this is very slow
@@ -286,9 +287,13 @@ class fractional_gamma_gen(rv_continuous):
         cdf_fn = lambda x: self._cdf(x, alpha=alpha, sigma=sigma, d=d, p=p)
         return OneSided_RVS(mean=m1, sd=sd, cdf_fn=cdf_fn).rvs(size)
 
-    def kanter_rvs(self, size, alpha, sigma, d, p):
-        """Fast sampler matching frac_gamma(alpha, sigma, d, p)."""
-        kanter = get_tilted_stable3(alpha, beta = alpha * d / p, gamma = alpha / p)
+    def kanter_rvs(self, size, alpha, sigma, d, p, rng=None):
+        """Fast sampler matching frac_gamma(alpha, sigma, d, p).
+
+        rng may be a numpy Generator or a legacy RandomState (both support the .random and
+        .gamma calls the Kanter sampler makes). None falls back to fresh OS entropy.
+        """
+        kanter = get_tilted_stable3(alpha, beta = alpha * d / p, gamma = alpha / p, rng=rng)
         return kanter.rvs(size) * sigma
     
 

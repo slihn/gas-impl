@@ -150,8 +150,12 @@ class gas_sn_gen(rv_continuous):
         k = float(k)
         beta = float(beta)
         # # (2.13) random number generation
-        z = skewnorm(beta).rvs(size)
-        v = frac_chi_mean(alpha=alpha, k=k).rvs(size)
+        # One rng drives both draws -- they are independent draws off a single stream.
+        # Pass random_state per call: frac_chi_mean is lru_cached, so its frozen dist is
+        # shared and must never have .random_state set on it.
+        rng = kwargs.get('random_state')
+        z = skewnorm(beta).rvs(size, random_state=rng)
+        v = frac_chi_mean(alpha=alpha, k=k).rvs(size, random_state=rng)
         if size == 1:
             return z / v  # type: ignore
         else:
@@ -375,9 +379,9 @@ class SN_Std(Univariate_Skew_Std):
             term3 = 0.0
         return self._mean() - self._skew() * self._var()**0.5 / 2.0 + term3
 
-    def _rvs(self, size: int):
+    def _rvs(self, size: int, random_state=None):
         # # (2.12a) random number generation via selection
-        z = [ (x0 if self.beta * x0 > x1 else -x0) for x0, x1 in multivariate_normal(cov=np.identity(2)).rvs(size=size)]  # type: ignore
+        z = [ (x0 if self.beta * x0 > x1 else -x0) for x0, x1 in multivariate_normal(cov=np.identity(2)).rvs(size=size, random_state=random_state)]  # type: ignore
         return np.array(z) if size > 1 else z[0]
 
     def _rvs_v2(self, size: int):
@@ -461,10 +465,10 @@ class ST_Std(Univariate_Skew_Std):
     def _mode(self):
         return self._mode_estimate()
 
-    def _rvs(self, size: int):
+    def _rvs(self, size: int, random_state=None):
         # # (2.13) random number generation
-        z0 = SN_Std(self.beta)._rvs(size=size)
-        v = chi(self.k).rvs(size) / self.k**0.5
+        z0 = SN_Std(self.beta)._rvs(size=size, random_state=random_state)
+        v = chi(self.k).rvs(size, random_state=random_state) / self.k**0.5
         if size == 1:
             return z0 / v  # type: ignore
         else:
@@ -532,11 +536,13 @@ class GAS_SN_Std(Univariate_Skew_Std):
     def _mode(self):
         return self._mode_estimate()
 
-    def _rvs(self, size: int):
+    def _rvs(self, size: int, random_state=None):
         # Section 12.1
         assert isinstance(size, int) and size > 0, f"ERROR: size = {size} must be a positive integer"
-        z0 = SN_Std(self.beta)._rvs(size=size)
-        v = self.fcm.rvs(size=size)
+        # One rng drives both draws. self.fcm is lru_cached and therefore shared, so the
+        # random_state is passed per call and never set as an attribute on it.
+        z0 = SN_Std(self.beta)._rvs(size=size, random_state=random_state)
+        v = self.fcm.rvs(size=size, random_state=random_state)
         if size == 1:
             return z0 / v
         else:
@@ -593,8 +599,8 @@ class GAS_SN(GAS_SN_Std, Univariate_Skew_LocScale):
     def ppf(self, p):
         return gas_sn(self.alpha, self.k, self.beta, loc=self.loc, scale=self.scale).ppf(p)
 
-    def rvs(self, size: int):
-       z = self._rvs(size=size)
+    def rvs(self, size: int, random_state=None):
+       z = self._rvs(size=size, random_state=random_state)
        return z * self.scale + self.loc
 
 

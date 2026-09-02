@@ -43,6 +43,17 @@ def build_tilted_kanter_grid(alpha, beta, grid_size=TILT_GRID_SIZE):
     return q_grid, q_cdf_grid
 
 
+@lru_cache(maxsize=100)
+def get_tilted_kanter_grid(alpha, beta, grid_size=TILT_GRID_SIZE):
+    """Cached inverse-CDF grid. The grid is the expensive part of a tilted Kanter sampler,
+    so it is cached here, letting the sampler object itself stay cheap and carry a caller's rng.
+    The arrays are shared by reference, hence read-only."""
+    q_grid, q_cdf_grid = build_tilted_kanter_grid(alpha, beta, grid_size=grid_size)
+    q_grid.flags.writeable = False
+    q_cdf_grid.flags.writeable = False
+    return q_grid, q_cdf_grid
+
+
 def one_sided_stable(alpha: float):
     # this is S_alpha, or L_alpha
     assert 0 < alpha <= 1.0
@@ -87,7 +98,7 @@ class TiltedKanter:
         self.q_cdf_grid: Optional[np.ndarray] = None
         # don't use q_grid if beta is zero
         if self.beta > 0:
-            self.q_grid, self.q_cdf_grid = build_tilted_kanter_grid(alpha, beta, grid_size=self.grid_size)
+            self.q_grid, self.q_cdf_grid = get_tilted_kanter_grid(self.alpha, self.beta, grid_size=self.grid_size)
 
     def q_rvs(self, size):
         if self.beta == 0:
@@ -257,14 +268,15 @@ class TitledStable(TitledStable3):
         return c * np.power(x, -self.beta) * one_sided_stable_pdf(x, self.alpha)
 
 
-@lru_cache(maxsize=100)
-def get_tilted_stable2(alpha, beta):
-    return TitledStable2(alpha, beta)
+# NOT lru_cached: these objects carry an rng, so caching one would pin a single random
+# stream for the life of the process and silently ignore a caller's seed. The costly part,
+# the inverse-CDF grid, is cached in get_tilted_kanter_grid instead.
+def get_tilted_stable2(alpha, beta, rng=None):
+    return TitledStable2(alpha, beta, rng=rng)
 
 
-@lru_cache(maxsize=100)
-def get_tilted_stable3(alpha, beta, gamma):
-    return TitledStable3(alpha, beta, gamma)
+def get_tilted_stable3(alpha, beta, gamma, rng=None):
+    return TitledStable3(alpha, beta, gamma, rng=rng)
 
 
 # ----------------------------------------------
