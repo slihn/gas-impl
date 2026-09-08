@@ -5,7 +5,7 @@ import pandas as pd
 import mpmath as mp
 import tsquad
 
-from scipy.special import gamma
+from scipy.special import gamma, rgamma
 from scipy.optimize import root_scalar
 from scipy.stats import levy_stable, norm
 from typing import Union, List, Optional
@@ -25,7 +25,11 @@ def mp_gamma(z):
 # --------------------------------------------------------------------------------
 def wright1(n: int, x: float, lam: float, mu: float) -> float:
         # the n-th term of Wright Fn
-        return np.power(x, n) / gamma(n+1.0) / gamma(lam*n + mu)  # type: ignore
+        # use rgamma (reciprocal gamma), which is 0 at the poles of gamma (non-positive
+        # integers), where the term vanishes. Dividing by gamma() there yields nan in
+        # scipy and poisons the whole series -- it bites whenever lam*n + mu hits a
+        # non-positive integer within max_n, e.g. alpha=0.6 at n=4 -> gamma(-2).
+        return np.power(x, n) / gamma(n+1.0) * rgamma(lam*n + mu)  # type: ignore
 
 
 def wright_fn(x: Union[float, int, List, np.ndarray, pd.Series], lam: float, mu: float, max_n: int=40, start: int=0):
