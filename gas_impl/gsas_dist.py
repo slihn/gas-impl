@@ -3,7 +3,7 @@ import pandas as pd
 import mpmath as mp
 from functools import lru_cache
 from scipy.stats import rv_continuous
-from scipy.special import gamma
+from scipy.special import gamma, rgamma
 from scipy.stats import norm
 from scipy.integrate import quad
 
@@ -123,7 +123,10 @@ class GSaS_Wright:
         z = np.sqrt(2) / (self.sigma * x)
         arg = max([(alpha*n+k)/2, n+1, alpha*n/2])  # max of x: gamma(x) should be capped. 
         if arg <= 120:
-            term = (-z**alpha)**n * gamma(alpha*n/2+k/2) / gamma(n+1) / gamma(-alpha*n/2)
+            # rgamma for the 1/gamma factor: it is 0 at gamma's poles, which -alpha*n/2 hits
+            # whenever alpha*n/2 is a whole number (alpha=1.15 -> n=40 gives gamma(-23)=nan).
+            # Dividing there yields nan and destroys the sum.
+            term = (-z**alpha)**n * gamma(alpha*n/2+k/2) / gamma(n+1) * rgamma(-alpha*n/2)
         else:
             term = 0.0
         return c / (2*x) * z**(k-1) * term

@@ -1,6 +1,6 @@
 
 import numpy as np
-from scipy.special import gamma, poch
+from scipy.special import gamma, poch, rgamma
 from scipy.integrate import quad
 from typing import Union, List, Optional
 
@@ -29,7 +29,10 @@ class Frac_Hyp1f1:
         b = self.b
 
         def wright1(n, x):
-            g = 1.0 / gamma(self.mu + self.lam * n)
+            # rgamma: 1/gamma is 0 at gamma's poles, where scipy's gamma() returns nan and
+            # poisons the whole series. mu + lam*n lands exactly on one for e.g.
+            # Frac_Hyp1f1_M(0.45, 1, 1) at n = 19, where it equals -8.
+            g = rgamma(self.mu + self.lam * n)
             pc = poch(a,n) / poch(b,n) if a != b else 1.0
             return np.power(x, n) / gamma(n+1) * g * pc
 
