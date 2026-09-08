@@ -5,7 +5,7 @@ from functools import lru_cache
 from scipy.stats import rv_continuous, levy_stable, gengamma
 from scipy.special import gamma, loggamma
 from scipy.special import sici 
-from scipy.integrate import quad, quadrature
+from scipy.integrate import quad, quad_vec
 from pandarallel import pandarallel  # type: ignore
 
 pandarallel.initialize(verbose=1)
@@ -88,7 +88,7 @@ class stable_count_gen(rv_continuous):
             rs = quad(fn, a=0, b=np.inf, limit=1000)
             return rs[0]
         if method == "gaussian":
-            rs = quadrature(fn, a=0, b=1000+x, maxiter=1000)
+            rs = quad_vec(fn, 0, 1000+x)  # scipy removed quadrature() in 1.15; quad_vec is the replacement
             return rs[0]
         raise Exception("ERROR: Unknown integration method")
 
