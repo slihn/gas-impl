@@ -3,19 +3,19 @@
 
 ## Overview - Fractional Distributions
 
-This package is upgraded to incorporate the skew-normal family in 2025, called GAS-SN. 
-The GAS-SN distribution is the most flexible distribution up to date, that can fit data sets with high skewness and kurtosis.
+This package was upgraded in 2025 to incorporate the skew-normal family, called GAS-SN. 
+The GAS-SN distribution is the most flexible to date, able to fit data sets with high skewness and kurtosis.
 
-The content is written in a book format, located at [here](docs/fracdist.pdf).
-As of July 2026, the book is in late editing stage.
-However, I just discovered that the fractional gamma distribution is equivalent
+The content is written in a book format, available [here](docs/fracdist.pdf).
+As of July 2026, the book is in the late editing stage.
+I just discovered that the fractional gamma distribution is equivalent
 to the inverse power of tilted stable law (Luc Devroye (2009)).
-The book might go through another revision, most likely ceoncept simplification.
+The book might go through another revision, most likely a concept simplification.
 
 This package provides the reference implementation for all the distributions mentioned in the book.
-See the test cases for usage examples. Every function is tested in at least one test cases.
+See the test cases for usage examples. Every function is tested in at least one test case.
 
-In late 2025, I have decided to call this group of new distributions **The Fractional Distributions**.
+In late 2025, I decided to call this group of new distributions **The Fractional Distributions**.
 Many classic distributions are generalized into the fractional distributions such as:
 <table>
 <tr>
@@ -29,25 +29,25 @@ Many classic distributions are generalized into the fractional distributions suc
 </tr><tr>
 <td> univariate skew-t distribution </td><td> univariate GAS-SN distribution (Chapter 12)</td>
 </tr><tr>
-<td> stable / chauchy distributions  </td><td> ditto</td>
+<td> stable / Cauchy distributions  </td><td> ditto</td>
 </tr><tr>
 <td> multivariate skew-t distribution </td><td> multivariate elliptical GAS-SN distribution (Chapter 15)</td>
-<tr>
+</tr>
 </table>
 
 ## Physical Interpretation
 
-This distribution family has the following parameters and they have physical meanings in the fractional transport problems, representing self-similar anomalous diffusion.
+This distribution family has the following parameters and they have physical meanings in fractional transport problems, representing self-similar anomalous diffusion.
 
 * $\alpha$ is the Levy index that acts as the temporal scaling exponent.
-* $p$ (fractional gamma distribution) acts as the spatial scaling exponent
+* $p$ (fractional gamma distribution) acts as the spatial scaling exponent.
 
 In the fractional chi/chi2 distribution, $p = \alpha$.
 The space-scale and time-scale are synchronized. The PDF retains its exact shape as it dilates over time.
 This makes the distribution structurally invariant under scaling transformations, 
 establishing a bridge to fractional Brownian motion.
 
-When $\alpha = 1$
+When $\alpha = 1$,
 
 * $k$ is the degrees of freedom. It encapsulates the spatial dimension or fractal topology of the network.
 
@@ -60,7 +60,7 @@ To showcase how good the fits are, two univariate fits on VIX and SPX return dis
 <tr>
 <td> <img src="docs/plot_vix_gas_sn.png"> </td>
 <td> <img src="docs/plot_spx_gas_sn.png"> </td>
-<tr>
+</tr>
 </table>
 
 The bivariate VIX-SPX data set is fitted with the bivariate elliptical distribution, as shown below:
@@ -74,15 +74,15 @@ https://arxiv.org/abs/2405.04693
 
 ## Installation
 
-There is no plan to set up pypi yet. 
+There is no plan to set up PyPI yet. 
 
-Please use the github local installation method:
+Please use the GitHub local installation method:
 
 ```bash
 pip install git+https://github.com/slihn/gas-impl.git#egg=gas_impl
 ```
 
-If the above method doesn't work, a safer method is to 'git clone' this repository in a local directory. 
+If the above method doesn't work, a safer method is to 'git clone' this repository into a local directory. 
 Then run:
 
 ```bash
@@ -90,16 +90,16 @@ cd /path-to/gas-impl
 pip install -e .
 ```
 
-You can run the test cases to make sure everything is working in your platform:
+You can run the test cases to make sure everything is working on your platform:
 
 ```bash
 cd /path-to/gas-impl
 pytest
 ```
 
-This package is developed under linux/ubuntu.
+This package is developed under Linux/Ubuntu.
 The 'pandarallel' package is used for multicore processing when an array is sent to the 'pdf' or 'cdf' functions.
-This part of implementation may not work for a non-linux platform. Please be aware.
+This part of the implementation may not work on a non-Linux platform. Please be aware.
 
 ## Example
 
