@@ -192,6 +192,9 @@ class Test_GSAS_PDF0:
         p2 = gsas(alpha=self.alpha, k=self.k, scale=1/sd).pdf(0.0)
         delta_precise_up_to(p1, p2)
 
+        p3 = gsas_std_pdf_at_zero(alpha=self.alpha, k=self.k, exact_form=True)
+        delta_precise_up_to(p1, p3)
+
     def test_cdf_interval(self):
         x = 0.2
         def _kernel(z): return self.g.pdf(z)
@@ -280,6 +283,7 @@ class Test_GSaS_Var_LargeK:
 # large k formula
 class Test_ExKurt_at_Large_K:
     def translate_ex_kurt(self, ex_kurt, k):
+        k = float(k)
         s = np.log(1.0 + ex_kurt/3) * (k-3)/4 + 0.5
         return gsas_kurtosis(1/s, k)
     
@@ -300,6 +304,32 @@ class Test_ExKurt_at_Large_K:
         ex_kurt = 0.5
         exact_ex_kurt = self.translate_ex_kurt(ex_kurt, k)
         delta_precise_up_to(ex_kurt, exact_ex_kurt, abstol=0.01, reltol=0.002)
+
+
+class Test_SPD_at_Large_K:
+    def translate_spd(self, spd, k):
+        k = float(k)
+        c = np.sqrt(2*np.pi)
+        s = np.log(c * spd) * 2/3 * (k-4/3) + 0.5
+        return gsas_std_pdf_at_zero(1/s, k)
+    
+    def test_v1_at_10(self):
+        k = 10.0
+        spd = 0.5
+        exact_spd = self.translate_spd(spd, k)
+        delta_precise_up_to(spd, exact_spd, abstol=0.02, reltol=0.02)
+
+    def test_v2_at_10(self):
+        k = 10.0
+        spd = 0.55
+        exact_spd = self.translate_spd(spd, k)
+        delta_precise_up_to(spd, exact_spd, abstol=0.04, reltol=0.02)
+
+    def test_v3_at_20(self):
+        k = 20.0
+        spd = 0.4
+        exact_spd = self.translate_spd(spd, k)
+        delta_precise_up_to(spd, exact_spd, abstol=0.01, reltol=0.002)
 
 
 # -------------------------------------------------------------------------------------

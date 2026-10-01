@@ -6,7 +6,7 @@ import mpmath as mp
 from typing import Union, Optional, List
 from functools import lru_cache
 from scipy.stats import rv_continuous, levy_stable
-from scipy.special import gamma, erf, hyp2f1, hyp1f1, betainc
+from scipy.special import gamma, gammaln, erf, hyp2f1, hyp1f1, betainc
 from scipy.stats import norm
 from scipy.integrate import quad
 import cmath
@@ -68,6 +68,7 @@ def gsas_kurtosis(alpha: float, k:float, fisher: bool=True, exact_form=False):
     return (kurt - 3.0) if fisher else kurt
 
 
+# --------------------------------------------------------------------------------
 def gsas_pdf_at_zero(alpha, k) -> float:
     alpha = float(alpha)
     k = float(k)
@@ -83,11 +84,26 @@ def gsas_pdf_at_zero(alpha, k) -> float:
     raise Exception(f"ERROR: k is not handled properly")
 
 
-def gsas_std_pdf_at_zero(alpha, k):
+def gsas_std_pdf_at_zero(alpha, k, exact_form=False):
+    if exact_form == True:
+        return gsas_std_pdf_at_zero_by_gamma(alpha, k)
+    # otherwise, derive it from peak_pdf * sd
+    # but the peak pdf formula is also gamma-based, not moment based.
     p = gsas_pdf_at_zero(alpha, k)
     var = gsas_moment(n=2.0, alpha=alpha, k=k)
     sd = var**0.5 if var >= 0 else np.NaN
     return p * sd
+
+def gsas_std_pdf_at_zero_by_gamma(alpha, k):
+    # (12.13): the standardized peak density as one gamma-function expression,
+    #   SPD = 1/sqrt(2 pi) [G((k-1)/2)/G((k-1)/alpha)]^(3/2) G(k/alpha)/G(k/2) [G((k-3)/alpha)/G((k-3)/2)]^(1/2)
+    alpha = float(alpha)
+    k = float(k)
+
+    lg = (1.5 * (gammaln((k-1)/2) - gammaln((k-1)/alpha))
+          + gammaln(k/alpha) - gammaln(k/2)
+          + 0.5 * (gammaln((k-3)/alpha) - gammaln((k-3)/2)))
+    return np.exp(lg) / np.sqrt(2*np.pi)
 
 
 def gsas_characteristic_fn(x, alpha, k):
