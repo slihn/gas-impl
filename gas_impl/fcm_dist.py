@@ -3,9 +3,9 @@ import numpy as np
 import pandas as pd
 import mpmath as mp
 from typing import Union, Optional
-from functools import lru_cache
+from functools import lru_cache, cached_property
 from scipy.stats import rv_continuous, multivariate_normal
-from scipy.special import gamma, iv
+from scipy.special import gamma, iv, loggamma, digamma, polygamma
 from scipy.integrate import quad
 
 
@@ -83,6 +83,43 @@ def fcm_k1_mellin_transform(s, eps: float, g: float):
     return eps * g**((s-1)*g - 1.0) * gamma_s 
 
 
+# ---- cancellation-free lnGamma(x + h) - lnGamma(x), for the log-space inversion of FracChiMean ----
+# At large |k| the two log-gammas are ~1e8 or more while their difference is O(1); subtracting them in
+# double precision loses ~1e-8. These helpers keep the difference at machine precision.
+_STIRLING_C = (1/12, -1/360, 1/1260, -1/1680, 1/1188, -691/360360, 1/156, -3617/122400)
+
+
+def _clog1p(w):
+    # accurate complex log(1 + w) for tiny |w| (numpy's complex log1p is not)
+    a, b = np.real(w), np.imag(w)
+    return 0.5 * np.log1p(2*a + a*a + b*b) + 1j * np.arctan2(b, 1.0 + a)
+
+
+def _cexpm1(w):
+    # accurate complex exp(w) - 1 for tiny |w|
+    a, b = np.real(w), np.imag(w)
+    return (np.expm1(a) * np.cos(b) - 2.0 * np.sin(b / 2)**2) + 1j * np.exp(a) * np.sin(b)
+
+
+def loggamma_diff(x: float, h, x_min: float = 20.0):
+    """lnGamma(x + h) - lnGamma(x) for real x > 0 and complex h, at machine precision for any x
+    (checked against mpmath to 4e-16 for x in [20, 1e12], |h| up to 150). Below x_min the direct
+    difference has no cancellation; above it, the Stirling series written as a difference:
+
+        (x - 1/2) log1p(h/x) + h log(x + h) - h + sum_n c_n x^(1-2n) expm1((1-2n) log1p(h/x))
+    """
+    x = float(x)
+    h = np.asarray(h, dtype=complex)          # scalar or array
+    if x < x_min:
+        return loggamma(x + h) - loggamma(x)
+    r = _clog1p(h / x)
+    out = (x - 0.5) * r + h * (np.log(x) + r) - h
+    for n, c in enumerate(_STIRLING_C, start=1):
+        m = 2 * n - 1
+        out += c * x**(-m) * _cexpm1(-m * r)
+    return out
+
+
 class FracChiMean:
     # this is primarily to facilitate the testings, especially for the Mellin transform
     def __init__(self, alpha, k, theta=0.0):
@@ -94,7 +131,12 @@ class FracChiMean:
         self.g = (alpha - theta) / (2.0 * alpha)
 
         self.c = 2.0 - k + 0.5 if k > 0 else abs(k) + 1.0 - 0.5  # for Mellin inverse integration
-        self.fcm = frac_chi_mean(alpha, k, theta)
+
+    @cached_property
+    def fcm(self):
+        # built on first use: frac_chi_mean asserts sigma > 0, which underflows at large |k|, and
+        # pdf_by_log_inversion never needs it
+        return frac_chi_mean(self.alpha, self.k, self.theta)
 
     def pdf(self, x): 
         return self.fcm.pdf(x)  # type: ignore
@@ -109,7 +151,100 @@ class FracChiMean:
         sigma = fcm_sigma(self.alpha, self.k, self.theta)
         z = x / sigma
         return C/sigma * z**(self.k-2) * wright_f_fn_by_levy_asymp(z**self.alpha, alpha=self.alpha * self.g)
-        
+
+    # ---- log-space inversion: stable at large |k| and small alpha ----------------------------------
+    # With V ~ FCM and eps = 1/alpha, the Mellin moment (fcm_moment) gives, exactly,
+    #     log E[V^s] = +- s log(sigma) + K(s),   K(s) = A(z +- s) - A(z),   A(x) = lnGamma(eps x) - lnGamma(g x)
+    # (upper signs and z = k - 1 for k > 0; lower signs and z = |k| for k < 0). U = log V - E[log V] is O(1)
+    # at every k, and its characteristic function exp(K(it) - it K'(0)) is a difference of complex
+    # log-gammas, so inverting it never forms the huge/tiny factors whose cancellation breaks pdf().
+
+    def _log_inversion_branch(self):
+        if self.k > 0:
+            assert self.k > 1, "pdf_by_log_inversion needs k > 1 or k < 0"
+            return self.k - 1.0, 1.0
+        return abs(self.k), -1.0
+
+    def _log_cgf(self, s):
+        # K(s) = log E[V^s] minus the +-s log(sigma) term; s may be complex
+        # A(z + sg s) - A(z), A(x) = lnGamma(eps x) - lnGamma(g x), with no cancellation
+        z, sg = self._log_inversion_branch()
+        return (loggamma_diff(self.eps * z, self.eps * sg * s)
+                - loggamma_diff(self.g * z, self.g * sg * s))
+
+    def log_mean(self) -> float:
+        # E[log V] = +- log(sigma) + K'(0), exact. log(sigma) analytically: sigma = |k|^(g - eps) g^g
+        # underflows to 0 at large |k| (e.g. 1000^-249.5), so never take np.log(fcm_sigma(...)) here
+        z, sg = self._log_inversion_branch()
+        log_sigma = (self.g - self.eps) * np.log(abs(self.k)) + self.g * np.log(self.g)
+        k1 = sg * (self.eps * digamma(z * self.eps) - self.g * digamma(self.g * z))
+        return float(sg * log_sigma + k1)
+
+    def log_var(self) -> float:
+        # Var[log V] = K''(0), exact
+        z, _ = self._log_inversion_branch()
+        return float(self.eps**2 * polygamma(1, z * self.eps) - self.g**2 * polygamma(1, self.g * z))
+
+    def _phi_centered(self, t):
+        # characteristic function of U = log V - E[log V] at real t (scalar or array)
+        z, sg = self._log_inversion_branch()
+        k1 = sg * (self.eps * digamma(z * self.eps) - self.g * digamma(self.g * z))
+        return np.exp(self._log_cgf(1j * np.asarray(t, dtype=float)) - 1j * np.asarray(t) * k1)
+
+    def _t_max(self, t_sd: float = 40.0, phi_tol: float = 1e-17, max_t_sd: float = 1e5) -> float:
+        # cutoff where |phi| < phi_tol. phi decays like a Gaussian when log V is near normal, but much
+        # more slowly (exponentially in t) when log V is far from normal, e.g. alpha -> 2 with small |k|,
+        # so extend from t_sd / sd until the tail is really negligible
+        sd = np.sqrt(self.log_var())
+        t = t_sd / sd
+        while np.abs(self._phi_centered(t)) > phi_tol and t * sd < max_t_sd:
+            t *= 1.5
+        return float(t)
+
+    def log_v_pdf(self, u, method: str = 'trapezoid', t_sd: float = 40.0, width_sd: float = 60.0,
+                  phi_tol: float = 1e-17):
+        """Density of U = log V - E[log V] at u (scalar or array), by Fourier inversion of its exact
+        characteristic function in centred log space:
+
+            f_U(u) = (1/(2 pi)) int Re[ phi(t) exp(-it u) ] dt,   phi(t) = exp(K(it) - it K'(0))
+
+        U is O(1) at every k, so this is stable where pdf() fails (large |k|, small alpha).
+
+        method='trapezoid' (default): the integrand is even and analytic in t, so the trapezoid rule on
+        the whole line converges exponentially. Step h = 2 pi / (width_sd sd): the only error is aliasing,
+        ~ f_U(u +- width_sd sd), negligible for |u| well inside width_sd/2 sd. The sum stops where
+        |phi| < phi_tol (see _t_max), starting from t_sd / sd. One phi evaluation serves all u.
+        method='quad': adaptive quadrature per u, a slower cross-check.
+
+        Accuracy is absolute (~1e-13 in f_U), so relative accuracy degrades in the far tails.
+        """
+        sd = np.sqrt(self.log_var())
+        t_max = self._t_max(t_sd=t_sd, phi_tol=phi_tol)
+        u_arr = np.atleast_1d(np.asarray(u, dtype=float))
+        if method == 'quad':
+            out = np.array([quad(lambda t: np.real(self._phi_centered(t) * np.exp(-1j * t * ui)),
+                                 0.0, t_max, limit=1000)[0] / np.pi for ui in u_arr])
+        elif method == 'trapezoid':
+            h = 2 * np.pi / (width_sd * sd)
+            t = h * np.arange(1, int(np.ceil(t_max / h)) + 1)
+            phi = self._phi_centered(t)
+            out = (h / np.pi) * (0.5 + np.real(np.exp(-1j * np.outer(u_arr, t)) @ phi))   # phi(0) = 1
+        else:
+            raise ValueError(f"method must be 'trapezoid' or 'quad', got {method!r}")
+        return out if np.ndim(u) else float(out[0])
+
+    def log_pdf_by_log_inversion(self, log_x, t_sd: float = 40.0) -> float:
+        """log f_V(x) at x = exp(log_x). Takes log x because at large |k| x itself is not a float:
+        E[log V] ~ 1380 at k = 1000 on the lognormal path, beyond float's e^709."""
+        return float(np.log(self.log_v_pdf(log_x - self.log_mean(), t_sd=t_sd)) - log_x)
+
+    def pdf_by_log_inversion(self, x, log: bool = False, t_sd: float = 40.0):
+        """pdf of V at x via log_v_pdf: f_V(x) = f_U(log x - E[log V]) / x. log=True returns log f_V(x).
+        For x beyond float range use log_pdf_by_log_inversion(log_x)."""
+        assert x > 0
+        lp = self.log_pdf_by_log_inversion(np.log(x), t_sd=t_sd)
+        return lp if log else float(np.exp(lp))
+
     def cdf_by_gamma_star(self, x):
         assert self.k > 0
         z = x / fcm_sigma(self.alpha, self.k, self.theta)

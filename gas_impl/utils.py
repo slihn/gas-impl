@@ -11,7 +11,7 @@ from numpy import polyfit, poly1d  # type: ignore
 from scipy.stats import skew, kurtosis, uniform
 from scipy.integrate import quad, dblquad
 from scipy.linalg import eigh, inv
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, PchipInterpolator
 
 from .int_utils import PDF_2D_Integration, PDF_Marginal_Integration
 
@@ -190,37 +190,51 @@ class OneSided_RVS(OneSided_RVS_Base):
         self.interp_min_size = 101
 
     def find_largest_x(self):
-        x = self._mean + self._sd  # start from mean + 1*sd 
-        while x < self._mean + 100 * self._sd:
-            p = self.cdf_fn(x)
-            if 1.0 - p < self.delta_cdf: break
-            x += self._sd
+        # Double from the mean until the upper tail is below delta_cdf. Stepping in sd units failed for
+        # heavy tails: where the 2nd moment does not exist, the sd passed in is a meaningless number
+        # (4.8e13 for frac_f at alpha = 1, k = 4), and one step jumped past the whole distribution.
+        x = self._mean
+        while x < self._mean * 1e15:
+            x *= 2.0
+            if 1.0 - self.cdf_fn(x) < self.delta_cdf: break
         return x
 
     def ppf_interp(self, size: int, debug=False):
         if debug:  print(f"setting up interp for size: {size}, time: {datetime.now().isoformat()}")
         intervals = self.interp_size if size >= self.interp_size else min([size, self.interp_min_size])
         max_x = self.find_largest_x()
-        x1 = np.linspace(self._mean, max_x, intervals)
+        m = self._mean
+        x1 = np.geomspace(m, max_x, intervals)    # log-spaced: max_x / m can be many decades
         sz = self.interp_min_size
-        x2 = np.linspace(0.11, self._mean, sz)
-        x3 = np.linspace(0.011, self._mean/10, sz)
-        x4 = np.linspace(0.0011, self._mean/100, sz)
-        df = pd.DataFrame({'x': np.concatenate((x1, x2, x3, x4)) }).round(3).drop_duplicates()
+        # The grid below the mean is relative to the mean. It used to be absolute (0.11, 0.011, 0.0011)
+        # and rounded to 3 decimals, which collapsed to a handful of points whenever E[x] is far from 1
+        # (e.g. E[x] = 0.0012 for GAS-SN at alpha = 0.3, k = 10), and the cubic through them went
+        # non-monotone. x5 adds the lower tail that a QQ plot of ~1e4 points reaches.
+        x2 = np.linspace(0.11 * m, m, sz)
+        x3 = np.linspace(0.011 * m, m / 10, sz)
+        x4 = np.linspace(0.0011 * m, m / 100, sz)
+        x5 = np.geomspace(1e-8 * m, 0.0011 * m, sz)
+        df = pd.DataFrame({'x': np.concatenate((x1, x2, x3, x4, x5)) }).drop_duplicates()
         df = df.sort_values(by=['x'])  # type: ignore
         if self.use_mp:
             df['cdf'] = df.x.parallel_apply( lambda x: self.cdf_fn(x) )  # Important: it uses parallel_apply, and calls _cdf()
         else:
             df['cdf'] = df.x.apply( lambda x: self.cdf_fn(x) )  # Adp can't use parallel_apply
 
+        # the interpolants need a strictly increasing cdf: drop points at or below the running maximum
+        # (both tails flatten into round-off, which handed interp1d duplicate x's)
+        cdf = df.cdf.to_numpy(dtype=float)
+        df = df[np.concatenate([[True], cdf[1:] > np.maximum.accumulate(cdf)[:-1]])]
+
         self.max_cdf = df.cdf.max()
         self.min_cdf = df.cdf.min()
         self.largest_x = df.x.max()  # this is overwritten but basically the same number
-        self.smallest_x = df.x.min() 
-        fn = interp1d(df.cdf, df.x, kind='cubic')
+        self.smallest_x = df.x.min()
+        # monotone (PCHIP) rather than a cubic spline, which can overshoot into a non-monotone ppf
+        fn = PchipInterpolator(df.cdf.to_numpy(dtype=float), df.x.to_numpy(dtype=float))
         if size >= self.interp_size:
             self.ppf_interp_fn = fn  # store the good one for reuse
-            self.cdf_interp_fn = interp1d(df.x, df.cdf, kind='cubic')
+            self.cdf_interp_fn = PchipInterpolator(df.x.to_numpy(dtype=float), df.cdf.to_numpy(dtype=float))
         if debug:  print(f"finished interp for size: {size}, time: {datetime.now().isoformat()}")
         return fn
     

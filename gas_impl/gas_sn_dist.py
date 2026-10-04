@@ -7,11 +7,13 @@ from abc import abstractmethod
 
 from scipy.stats import rv_continuous
 from scipy.stats import norm, skewnorm, halfnorm, multivariate_normal, t, chi, chi2, f
-from scipy.integrate import quad
-from scipy.special import gamma, owens_t
+from scipy.integrate import quad, trapezoid
+from scipy.special import gamma, owens_t, log_ndtr
 from scipy.optimize import minimize
+from scipy.interpolate import PchipInterpolator
 
 from .fcm_dist import (
+    FracChiMean,
     frac_chi_mean,
     fcm_mellin_transform,
     fcm_moment,
@@ -583,11 +585,67 @@ class GAS_SN_Std(Univariate_Skew_Std):
         return pdf_by_mellin(x, _lower_gamma_mellin, c=self.c - 1.0)
 
     def _cdf_by_mellin(self, x):
-        if x < 0:  
+        if x < 0:
             A = GAS_SN_Std(self.alpha, self.k, -self.beta)._lower_gamma_by_mellin(-x)
             return 1.0 - self._cdf(0.0) - A
         assert x > 0
         return self._lower_gamma_by_mellin(x) + self._cdf(0.0)
+
+    def _pdf_by_log_inversion(self, x, n_u: int = 3001, lo_sd: float = 20.0, hi_sd: float = 12.0):
+        """pdf of the standard GAS-SN at x (scalar or array), for low alpha and high k.
+
+        `_pdf` integrates the library FCM pdf, which loses accuracy as alpha falls and k grows
+        (on the LNN path k ~ 1 + (1/alpha - 1/2)/0.38 it is ~1e-5 down to alpha = 0.3, 100% wrong
+        at 0.2, 0 at 0.15). This variant integrates the exact density of U = log V - E[log V]
+        (FracChiMean.log_v_pdf) instead, on one trapezoid grid in u shared by every x:
+
+            f(x) = int f_U(u) 2 v phi(x v) Phi(beta x v) du,   v = exp(u + E[log V])
+
+        U is O(1) at every (alpha, k), so the grid [-lo_sd, hi_sd] x sd(U) covers it uniformly.
+        Domain k > 1 or k < 0 (FracChiMean's log inversion).
+        """
+        u, v, fu = self._log_v_grid(n_u, lo_sd, hi_sd)
+        xv = np.multiply.outer(np.asarray(x, dtype=float), v)
+        integrand = 2.0 * v * np.exp(norm.logpdf(xv) + log_ndtr(self.beta * xv)) * fu
+        return trapezoid(integrand, u, axis=-1)
+
+    def _log_v_grid(self, n_u: int = 3001, lo_sd: float = 20.0, hi_sd: float = 12.0):
+        # (u, v, f_U(u)) on the shared grid of the *_by_log_inversion variants, v = exp(u + E[log V])
+        f = FracChiMean(self.alpha, self.k)
+        m, sd = f.log_mean(), np.sqrt(f.log_var())
+        u = np.linspace(-lo_sd * sd, hi_sd * sd, n_u)
+        return u, np.exp(u + m), f.log_v_pdf(u)
+
+    def _cdf_by_log_inversion(self, x):
+        """cdf of the standard GAS-SN at x (scalar or array), the companion of _pdf_by_log_inversion:
+        F(x) = int f_U(u) F_SN(x v) du, with the skew-normal cdf F_SN(z) = Phi(z) - 2 T(z, beta)."""
+        u, v, fu = self._log_v_grid()
+        xv = np.multiply.outer(np.asarray(x, dtype=float), v)
+        return trapezoid((norm.cdf(xv) - 2.0 * owens_t(xv, self.beta)) * fu, u, axis=-1)
+
+    def _squared_sf_by_log_inversion(self, q):
+        """P(X^2 > q) for the standard GAS-SN, q >= 0. Z^2 ~ chi2(1) whatever beta is, so
+        P(X^2 > q) = P(|Z| > sqrt(q) V) = int f_U(u) erfc(sqrt(q) v / sqrt 2) du -- independent of beta."""
+        u, v, fu = self._log_v_grid()
+        t = np.multiply.outer(np.sqrt(np.asarray(q, dtype=float)), v)
+        return trapezoid(2.0 * norm.sf(t) * fu, u, axis=-1)
+
+    def _squared_ppf_by_log_inversion(self, p, n_grid: int = 2001):
+        """Quantiles of X^2 at probabilities p in (0, 1). log q is interpolated (monotone cubic) against
+        logit P(X^2 <= q) on a log grid spanning 1e-12 to 1e8 times E[X^2]: both ends of that map are
+        close to linear, so the round trip is far tighter than interpolating against the cdf itself.
+        Probabilities beyond the grid's reach come back nan."""
+        q = self._moment(2) * np.geomspace(1e-12, 1e8, n_grid)
+        sf = self._squared_sf_by_log_inversion(q)
+        cdf = 1.0 - sf
+        ok = (cdf > 0) & (sf > 0)
+        logit = np.log(cdf[ok]) - np.log(sf[ok])
+        # strictly increasing for the interpolant: drop any point at or below the running maximum
+        # (the far tails flatten into round-off)
+        keep = np.concatenate([[True], logit[1:] > np.maximum.accumulate(logit)[:-1]])
+        fn = PchipInterpolator(logit[keep], np.log(q[ok][keep]), extrapolate=False)
+        p = np.asarray(p, dtype=float)
+        return np.exp(fn(np.log(p) - np.log1p(-p)))
 
 
 class GAS_SN(GAS_SN_Std, Univariate_Skew_LocScale):
@@ -602,6 +660,15 @@ class GAS_SN(GAS_SN_Std, Univariate_Skew_LocScale):
     def rvs(self, size: int, random_state=None):
        z = self._rvs(size=size, random_state=random_state)
        return z * self.scale + self.loc
+
+    def pdf_by_log_inversion(self, x):
+        # vectorized pdf for low alpha and high k; see GAS_SN_Std._pdf_by_log_inversion
+        z = (np.asarray(x, dtype=float) - self.loc) / self.scale
+        return self._pdf_by_log_inversion(z) / self.scale
+
+    def cdf_by_log_inversion(self, x):
+        z = (np.asarray(x, dtype=float) - self.loc) / self.scale
+        return self._cdf_by_log_inversion(z)
 
 
 

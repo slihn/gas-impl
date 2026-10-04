@@ -16,12 +16,16 @@ from .ff_dist import FracF_PPF  # type: ignore
 
 
 class TwoSided_Plots:
-    def __init__(self, lkc: LLK_Calculator, dist_name: str, data_name: str, num_bins=200):
+    def __init__(self, lkc: LLK_Calculator, dist_name: str, data_name: str, num_bins=200,
+                 use_log_inversion: bool = False):
+        # use_log_inversion: take pdf, cdf and the squared quantiles from GAS_SN's *_by_log_inversion
+        # variants instead of the library rv, which is wrong at low alpha / high k (e.g. alpha < 0.3)
         self.lkc: LLK_Calculator = lkc
-        self.data: pd.Series = lkc.data 
+        self.data: pd.Series = lkc.data
         self.sorted_data: pd.Series = np.sort(self.data)  # type: ignore
         self.size = len(self.data)
-        self.rv = lkc.rv
+        self.use_log_inversion = use_log_inversion
+        self.rv = GAS_SN(lkc.alpha, lkc.k, lkc.beta, scale=lkc.scale, loc=lkc.loc) if use_log_inversion else lkc.rv
         self.dist_name = dist_name
         self.data_name = data_name
         self.num_bins = num_bins
@@ -71,8 +75,12 @@ class TwoSided_Plots:
         _, bins = histogram(self.data, bins=self.num_bins, density=True)
         df1 = pd.DataFrame(data={'x': bins})
         df1['observed_cdf'] = df1['x'].parallel_apply(lambda x: _data_cdf(x))
-        df1['pdf'] = self.rv.pdf(df1['x'])  # type: ignore
-        df1['cdf'] = self.rv.cdf(df1['x'])  # type: ignore
+        if self.use_log_inversion:
+            df1['pdf'] = self.rv.pdf_by_log_inversion(df1['x'].to_numpy())  # type: ignore
+            df1['cdf'] = self.rv.cdf_by_log_inversion(df1['x'].to_numpy())  # type: ignore
+        else:
+            df1['pdf'] = self.rv.pdf(df1['x'])  # type: ignore
+            df1['cdf'] = self.rv.cdf(df1['x'])  # type: ignore
         df1['dx'] = df1.x.diff()
         df1.loc[0, 'dx'] = df1.loc[1, 'dx']  # type: ignore
         print('total pdf =', df1.eval("pdf * dx").sum())
@@ -105,10 +113,32 @@ class TwoSided_Plots:
         pp_plot(ax, self.df.cdf, self.df.observed_cdf)
         ax.set_title(f"{self.data_name} PP-plot (mean: {self.data.mean():.2f} vs th {self.rv.mean():.2f})")  # type: ignore
         
-    def squared_qq_plot(self, ax):
-        self.qp = PPF_Quantile_Plots(self.lkc.get_squared_ppf_rv())
-        self.qp.qq_plot(ax)
-        ax.set_title(f"{self.data_name} Squared QQ-plot")
+    def squared_qq_plot(self, ax, normalize=False):
+        # normalize: both axes in units of the model's E[X^2], so the theoretical mean sits at 1
+        if self.use_log_inversion:
+            ppf_rv = LogInversion_Squared_PPF(self.rv, self.lkc.get_squared_x())  # type: ignore
+        else:
+            ppf_rv = self.lkc.get_squared_ppf_rv()
+        self.qp = PPF_Quantile_Plots(ppf_rv)
+        self.qp.qq_plot(ax, normalize=normalize)
+        ax.set_title(f"{self.data_name} Squared QQ-plot" + (" (normalized by E[X²])" if normalize else ""))
+
+
+class LogInversion_Squared_PPF:
+    # Stand-in for FracF_PPF in PPF_Quantile_Plots: quantiles of X^2 from GAS_SN's log-inversion
+    # variant, for low alpha / high k where frac_f is not reliable. Same plotting positions i/(n+1).
+    def __init__(self, g: GAS_SN, observed_squared):
+        self.g = g
+        self.observed_data = np.sort(np.asarray(observed_squared, dtype=float))
+
+    def moment(self, n):
+        assert n == 1, "only the mean of X^2 is used by PPF_Quantile_Plots"
+        return float(self.g._moment(2))
+
+    def analyze_quantiles(self):
+        n = len(self.observed_data)
+        theoretical = self.g._squared_ppf_by_log_inversion(np.arange(1, n + 1) / (n + 1))
+        return self.observed_data, theoretical
 
 
 class PPF_Quantile_Plots:
@@ -120,25 +150,33 @@ class PPF_Quantile_Plots:
         assert isinstance(self.theoretical_quantiles, np.ndarray)
         print(f"finished quantile analysis")
 
-    def qq_plot(self, ax, max_x: Optional[float] = None, min_x: Optional[float] = None, log_scale=False):
+    def qq_plot(self, ax, max_x: Optional[float] = None, min_x: Optional[float] = None, log_scale=False,
+                normalize=False):
+        # normalize: divide both quantile sets by the model's mean, so the theoretical mean is 1 and the
+        # axes read the same whatever units the rv's scale puts them in (max_x/min_x are then in those units)
         assert isinstance(self.theoretical_quantiles, np.ndarray)
+        unit = self.ppf_rv.moment(1) if normalize else 1.0
+        theoretical, observed = self.theoretical_quantiles / unit, self.observed_quantiles / unit
         if max_x is None:
-            max_x = max(self.theoretical_quantiles) * 1.1
+            max_x = float(max(theoretical)) * 1.1
             assert isinstance(max_x, float) and max_x >= 0, f"ERROR: max_x is {max_x} and should be >= 0"
         if min_x is None:
-            min_x = min(self.theoretical_quantiles) * 0.9
+            min_x = float(min(theoretical)) * 0.9
             assert isinstance(min_x, float) and min_x >= 0, f"ERROR: min_x is {min_x} and should be >= 0"
             if log_scale and min_x < 1e-4: # avoid negative values
                 min_x = 1e-4
-        qq_plot(ax, self.theoretical_quantiles, self.observed_quantiles, max_x=max_x, min_x=min_x)
+        qq_plot(ax, theoretical, observed, max_x=max_x, min_x=min_x)
         if log_scale:
             ax.set_xscale('log')
             ax.set_yscale('log')
+        if normalize:
+            ax.set_xlabel("Theoretical Quantiles / theoretical mean")
+            ax.set_ylabel("Observed Quantiles / theoretical mean")
 
-        rv_mean = self.ppf_rv.moment(1)
-        data_mean = np.mean(self.observed_quantiles)
-        ax.axvline(x=rv_mean, color='r', linestyle='--', linewidth=1.0, label=f"theoretical mean: {rv_mean:.2f}")
-        ax.axhline(y=data_mean, color='r', linestyle='--', linewidth=1.0, label=f"observed mean: {data_mean:.2f}")
+        rv_mean = self.ppf_rv.moment(1) / unit
+        data_mean = np.mean(observed)
+        ax.axvline(x=rv_mean, color='r', linestyle='--', linewidth=1.0, label=f"theoretical mean: {rv_mean:.4g}")
+        ax.axhline(y=data_mean, color='r', linestyle='--', linewidth=1.0, label=f"observed mean: {data_mean:.4g}")
         ax.legend(loc='lower right')
 
     def pp_plot(self, ax):
