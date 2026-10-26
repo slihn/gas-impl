@@ -1,5 +1,5 @@
 
-from functools import lru_cache, partial
+from functools import lru_cache, partial, cached_property
 import numpy as np
 import pandas as pd
 from typing import Union, Optional, List
@@ -19,6 +19,7 @@ from .fcm_dist import (
     fcm_moment,
     fcm_normalization_constant,
     fcm_sigma,
+    fcm_lognormal_scaling_constant,
 )
 from .gas_dist import gsas, gsas_squared
 from .wright import norm_mellin_transform
@@ -494,10 +495,15 @@ class GAS_SN_Std(Univariate_Skew_Std):
         rv_square = gas_sn_squared(self.alpha, self.k)
         Univariate_Skew_Std.__init__(self, beta=beta, rv_square=rv_square)
 
-        self.fcm = frac_chi_mean(self.alpha, self.k)
-        self.b = np.sqrt(2.0 / np.pi) * fcm_moment(-1, alpha=self.alpha, k=self.k) 
+        self.b = np.sqrt(2.0 / np.pi) * fcm_moment(-1, alpha=self.alpha, k=self.k)
         self.c = 0.5
-        
+
+    @cached_property
+    def fcm(self):
+        # built on first use, as FracChiMean.fcm: frac_chi_mean asserts sigma > 0, which underflows at large |k|
+        # (alpha = 0.0013, k = 3022), and the *_by_log_inversion methods never need it
+        return frac_chi_mean(self.alpha, self.k)
+
     def _quad(self, fn, a=0.0, b=np.inf):
         return quad(fn, a=a, b=b, limit=100000)[0]
 
@@ -591,7 +597,7 @@ class GAS_SN_Std(Univariate_Skew_Std):
         assert x > 0
         return self._lower_gamma_by_mellin(x) + self._cdf(0.0)
 
-    def _pdf_by_log_inversion(self, x, n_u: int = 3001, lo_sd: float = 20.0, hi_sd: float = 12.0):
+    def _pdf_by_log_inversion(self, x, n_u: int = 3001, lo_sd: float = 20.0, hi_sd: float = 12.0, rescaled: bool = False):
         """pdf of the standard GAS-SN at x (scalar or array), for low alpha and high k.
 
         `_pdf` integrates the library FCM pdf, which loses accuracy as alpha falls and k grows
@@ -603,25 +609,47 @@ class GAS_SN_Std(Univariate_Skew_Std):
 
         U is O(1) at every (alpha, k), so the grid [-lo_sd, hi_sd] x sd(U) covers it uniformly.
         Domain k > 1 or k < 0 (FracChiMean's log inversion).
+
+        rescaled=True is the pdf of Z0 / V_hat instead, V_hat = D^zeta V (Definition 7.4): v_hat = exp(u + E[log V_hat])
+        stays O(1) on the lognormal path, where v = exp(u + E[log V]) overflows (E[log V] = 5157 at alpha = 0.0013,
+        k = 3022). U, and so f_U, is the same for V and V_hat.
         """
-        u, v, fu = self._log_v_grid(n_u, lo_sd, hi_sd)
+        u, v, fu = self._log_v_grid(n_u, lo_sd, hi_sd, rescaled=rescaled)
         xv = np.multiply.outer(np.asarray(x, dtype=float), v)
         integrand = 2.0 * v * np.exp(norm.logpdf(xv) + log_ndtr(self.beta * xv)) * fu
         return trapezoid(integrand, u, axis=-1)
 
-    def _log_v_grid(self, n_u: int = 3001, lo_sd: float = 20.0, hi_sd: float = 12.0):
-        # (u, v, f_U(u)) on the shared grid of the *_by_log_inversion variants, v = exp(u + E[log V])
+    def _log_v_grid(self, n_u: int = 3001, lo_sd: float = 20.0, hi_sd: float = 12.0, rescaled: bool = False):
+        # (u, v, f_U(u)) on the shared grid of the *_by_log_inversion variants, v = exp(u + E[log V]),
+        # or exp(u + E[log V_hat]) when rescaled
         f = FracChiMean(self.alpha, self.k)
-        m, sd = f.log_mean(), np.sqrt(f.log_var())
+        m, sd = f.log_mean(rescaled=rescaled), np.sqrt(f.log_var())
         u = np.linspace(-lo_sd * sd, hi_sd * sd, n_u)
         return u, np.exp(u + m), f.log_v_pdf(u)
 
-    def _cdf_by_log_inversion(self, x):
+    def _cdf_by_log_inversion(self, x, rescaled: bool = False):
         """cdf of the standard GAS-SN at x (scalar or array), the companion of _pdf_by_log_inversion:
         F(x) = int f_U(u) F_SN(x v) du, with the skew-normal cdf F_SN(z) = Phi(z) - 2 T(z, beta)."""
-        u, v, fu = self._log_v_grid()
+        u, v, fu = self._log_v_grid(rescaled=rescaled)
         xv = np.multiply.outer(np.asarray(x, dtype=float), v)
         return trapezoid((norm.cdf(xv) - 2.0 * owens_t(xv, self.beta)) * fu, u, axis=-1)
+
+    def _moment_by_log_moment(self, n, rescaled: bool = False):
+        """E[X^n] of the standard GAS-SN, X = Z0 / V (Z0 / V_hat when rescaled). Z0 and V are independent, so
+        E[X^n] = E[Z0^n] E[V^-n], with E[V^-n] from FracChiMean.log_moment (exact, never forms sigma). Equals _moment
+        where fcm_moment is representable; in book units it under/overflows where fcm_moment does (bear: alpha = 0.0013,
+        k = 3022), but with rescaled=True it stays finite on the whole lognormal path."""
+        n = float(n)
+        return SN_Std(self.beta)._moment(n) * np.exp(FracChiMean(self.alpha, self.k).log_moment(-n, rescaled=rescaled))
+
+    def _var_by_log_moment(self, rescaled: bool = False):
+        """variance of the standard GAS-SN from _moment_by_log_moment. Not from the log-inversion grid: e^{-2u} amplifies
+        f_U's absolute floor (~1e-13) in the lower tail to ~1e-5. Needs only n <= 2, so it exists where _stats does not."""
+        return self._moment_by_log_moment(2, rescaled=rescaled) - self._moment_by_log_moment(1, rescaled=rescaled)**2
+
+    def _stats_by_log_moment(self, rescaled: bool = False):
+        # as _stats, from _moment_by_log_moment; skew and (excess) kurtosis are scale-free, so rescaled only keeps them finite
+        return calc_stats_from_moments([self._moment_by_log_moment(n, rescaled=rescaled) for n in range(5)])
 
     def _squared_sf_by_log_inversion(self, q):
         """P(X^2 > q) for the standard GAS-SN, q >= 0. Z^2 ~ chi2(1) whatever beta is, so
@@ -650,8 +678,17 @@ class GAS_SN_Std(Univariate_Skew_Std):
 
 class GAS_SN(GAS_SN_Std, Univariate_Skew_LocScale):
     # p.103, above (4.14)
-    def __init__(self, alpha, k, beta: float, scale=1.0, loc=0.0):
+    def __init__(self, alpha, k, beta: float, scale=1.0, loc=0.0, rescaled: bool = False):
+        """rescaled=True: scale is for X = loc + scale Z0 / V_hat, V_hat = D^zeta V (fracdist Definition 7.4), whose
+        scale stays O(sd) on the lognormal path. self.scale keeps the book's meaning (the scale of Z0 / V), i.e.
+        scale D^(-zeta); it is inf where that overflows (alpha = 0.0013, k = 3022 needs e^5157), and there only the
+        *_by_log_inversion methods work. self.scale_hat is the scale as passed, the one the log inversion uses."""
         GAS_SN_Std.__init__(self, alpha=alpha, k=k, beta=beta)
+        self.rescaled = bool(rescaled)
+        self.scale_hat = float(scale)
+        if self.rescaled:
+            with np.errstate(over='ignore'):
+                scale = self.scale_hat * np.exp(-np.sign(self.k) * fcm_lognormal_scaling_constant(self.alpha, self.k))
         Univariate_Skew_LocScale.__init__(self, beta=self.beta, rv_square=self.rv_square, scale=scale, loc=loc)  # type: ignore
 
     def ppf(self, p):
@@ -663,12 +700,33 @@ class GAS_SN(GAS_SN_Std, Univariate_Skew_LocScale):
 
     def pdf_by_log_inversion(self, x):
         # vectorized pdf for low alpha and high k; see GAS_SN_Std._pdf_by_log_inversion
-        z = (np.asarray(x, dtype=float) - self.loc) / self.scale
-        return self._pdf_by_log_inversion(z) / self.scale
+        z = (np.asarray(x, dtype=float) - self.loc) / self.scale_hat
+        return self._pdf_by_log_inversion(z, rescaled=self.rescaled) / self.scale_hat
 
     def cdf_by_log_inversion(self, x):
-        z = (np.asarray(x, dtype=float) - self.loc) / self.scale
-        return self._cdf_by_log_inversion(z)
+        z = (np.asarray(x, dtype=float) - self.loc) / self.scale_hat
+        return self._cdf_by_log_inversion(z, rescaled=self.rescaled)
+
+    # mean / var / skew / kurtosis from log moments: finite where the fcm_moment path (and self.scale) is 0, inf or nan
+    def mean_by_log_moment(self):
+        return self._moment_by_log_moment(1, rescaled=self.rescaled) * self.scale_hat + self.loc
+
+    def var_by_log_moment(self):
+        return self._var_by_log_moment(rescaled=self.rescaled) * self.scale_hat**2
+
+    def skew_by_log_moment(self):
+        return self._stats_by_log_moment(rescaled=self.rescaled)['skew']
+
+    def kurtosis_by_log_moment(self):
+        # excess kurtosis, as kurtosis()
+        return self._stats_by_log_moment(rescaled=self.rescaled)['kurtosis']
+
+
+class GSAS(GAS_SN):
+    # GSaS: the symmetric GAS-SN, beta = 0 (fracdist Ch. 12), X = loc + scale Z / V with Z ~ N(0, 1).
+    # rescaled=True takes the scale of Z / V_hat (Definition 7.4), as GAS_SN; it is the one to use near the LNN line.
+    def __init__(self, alpha, k, scale=1.0, loc=0.0, rescaled: bool = False):
+        GAS_SN.__init__(self, alpha=alpha, k=k, beta=0.0, scale=scale, loc=loc, rescaled=rescaled)
 
 
 

@@ -10,7 +10,7 @@ from scipy.stats import tstd, levy_stable
 from .frac_gamma_dist import frac_gamma
 from .fcm_dist import frac_chi_mean, fcm_sigma, frac_chi2_mean
 from .gas_dist import from_feller_to_s1, g_from_theta, levy_stable_rvs_from_ratio
-from .tilted_stable import InverseStable, TitledStable, get_tilted_stable2, get_tilted_stable3, PitmanYorRestaurant
+from .tilted_stable import InverseStable, TiltedStable, get_tilted_stable2, get_tilted_stable3, PitmanYorRestaurant
 from .wright import M_Wright_One_Sided
 from .unit_test_utils import *
 
@@ -54,8 +54,8 @@ class Test_M_Wright_RVS:
             expected = self.mw.pdf(x)
             for name, rv in [
                 ("InverseStable", self.inv_stable),
-                ("TitledStable2", self.ts2_mw),
-                ("TitledStable3", self.ts3_mw),
+                ("TiltedStable2", self.ts2_mw),
+                ("TiltedStable3", self.ts3_mw),
             ]:
                 delta_precise_up_to(
                     rv.pdf(x),
@@ -107,17 +107,17 @@ class Test_Frac_Gamma_RVS:
             delta_precise_up_to(
                 actual,
                 self.fg.pdf(x),  # type: ignore
-                msg_prefix=f"TitledStable2 PDF test x={x}",
+                msg_prefix=f"TiltedStable2 PDF test x={x}",
             )
     
     def test_ts3_pdf(self):
-        """Fails when scaling TitledStable3 does not produce fractional gamma."""
+        """Fails when scaling TiltedStable3 does not produce fractional gamma."""
         for x in [1.0, 1.1]:
             actual = self.ts3.pdf(x / self.sigma) / self.sigma
             delta_precise_up_to(
                 actual,
                 self.fg.pdf(x),  # type: ignore
-                msg_prefix=f"TitledStable3 PDF test x={x}",
+                msg_prefix=f"TiltedStable3 PDF test x={x}",
             )
 
 
@@ -305,7 +305,7 @@ class Test_FCM2_NegK_RVS:
     NUM_STEPS = 30_000_000  # it takes a lot more steps to converge !
 
     fc_no_scale = frac_chi2_mean(alpha, -k, scale=fc_sigma)
-    ts = TitledStable(alpha/2, beta)  # to validate its PDF
+    ts = TiltedStable(alpha/2, beta)  # to validate its PDF
 
     def test_fcm_rvs(self):
         x1 = self.fc.rvs(self.NUM_STEPS)  

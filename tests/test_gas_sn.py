@@ -1,4 +1,6 @@
 
+import numpy as np
+import pytest
 from scipy.stats import skewnorm, chi, chi2, f, skew, kurtosis
 from scipy.integrate import quad
 from scipy.special import owens_t
@@ -6,9 +8,10 @@ from scipy.optimize import minimize
 
 from .unit_test_utils import *
 
-from .fcm_dist import frac_chi_mean
-from .gas_sn_dist import gas_sn, SN_Std, SN, ST_Std, ST, GAS_SN_Std, GAS_SN, GAS_SN_TAIL,\
+from .fcm_dist import frac_chi_mean, fcm_lognormal_scaling_constant
+from .gas_sn_dist import gas_sn, SN_Std, SN, ST_Std, ST, GAS_SN_Std, GAS_SN, GSAS, GAS_SN_TAIL,\
     pdf_sqare, gas_sn_mellin_transform, owens_t_mellin_transform
+from .gsas_dist import gsas_mixture_pdf
 
 
 class Test_PDF_Square:
@@ -456,3 +459,67 @@ class Test_GAS_SN_TAIL_V2:
         exact_at_zero = self.g2.pdf(0.0)  # type: ignore
         approx_at_zero = self.g.pdf(0.0)
         delta_precise_up_to(exact_at_zero, approx_at_zero, msg_prefix="x=0")
+
+
+class Test_GAS_SN_Rescaled:
+    # GAS_SN(rescaled=True): the scale is that of Z0 / V_hat, V_hat = D^zeta V (fracdist Definition 7.4). Away from the
+    # LNN line it must be the book's GAS_SN with the scale multiplied by D^(-zeta), in every quantity.
+
+    @pytest.mark.parametrize("alpha, k", [(0.8884, -3.2558), (0.9, 3.13), (0.0993, 28.154)])
+    def test_rescaled_is_the_book_gas_sn_with_scale_times_D(self, alpha, k):
+        """Fails when the flag changes anything but the scale: rescaled=True with scale w must be the book's GAS_SN
+        with scale w D^(-zeta) -- in self.scale, the log-inversion pdf and the variance (fcm_moment path)."""
+        w, beta = 0.7, -0.2
+        new = GAS_SN(alpha=alpha, k=k, beta=beta, scale=w, loc=0.1, rescaled=True)
+        old = GAS_SN(alpha=alpha, k=k, beta=beta, scale=w * np.exp(-np.sign(k) * fcm_lognormal_scaling_constant(alpha, k)), loc=0.1)
+        assert np.isclose(new.scale, old.scale, rtol=1e-14)
+        x = 0.1 + np.sqrt(old.var()) * np.array([-3.0, -1.0, 0.0, 1.0, 3.0])
+        assert np.max(np.abs(new.pdf_by_log_inversion(x) / old.pdf_by_log_inversion(x) - 1)) < 1e-12
+        assert np.isclose(new.var_by_log_moment(), old.var(), rtol=1e-10)
+
+    @pytest.mark.parametrize("alpha, k", [(0.8884, -3.2558), (0.5, 6.0), (0.0993, 28.154)])
+    def test_moment_by_log_moment_matches_moment(self, alpha, k):
+        """Fails when E[X^n] = E[Z0^n] E[V^-n] is assembled wrongly (sign of odd moments, the -n, the SN factor):
+        it must equal the fcm_moment path _moment for n = 1..4, and the rescaled one must be D^(-zeta n) times it."""
+        g = GAS_SN_Std(alpha=alpha, k=k, beta=-0.2)
+        log_D = fcm_lognormal_scaling_constant(alpha, k)
+        for n in (1, 2, 3, 4):
+            assert np.isclose(g._moment_by_log_moment(n), g._moment(n), rtol=1e-12)
+            assert np.isclose(g._moment_by_log_moment(n, rescaled=True),
+                              g._moment(n) * np.exp(-np.sign(k) * n * log_D), rtol=1e-12)
+
+    @pytest.mark.parametrize("alpha, k", [(0.8884, -3.2558), (0.5, 6.0)])
+    def test_stats_by_log_moment_match_fcm_moment_stats(self, alpha, k):
+        """Fails when the log-moment mean / var / skew / kurtosis differ from the fcm_moment path where both work,
+        in book units and rescaled (skew and kurtosis are scale-free, so rescaling must not move them)."""
+        for rescaled in (False, True):
+            g = GAS_SN(alpha=alpha, k=k, beta=-0.2, scale=0.7, loc=0.1, rescaled=rescaled)
+            assert np.allclose([g.mean_by_log_moment(), g.var_by_log_moment(), g.skew_by_log_moment(), g.kurtosis_by_log_moment()],
+                               [g.mean(), g.var(), g.skew(), g.kurtosis()], rtol=1e-10)
+
+
+class Test_GSAS_Bear:
+    # SPX bear state (S = 1 in bmda global_regime_S_X.csv, 1991-11-15 .. 2026-04-07): (alpha, k) inverted from its
+    # (excess kurtosis, SPD), with its sample mean and sd. It sits on the LNN line, where E[log V] = 5157: the book's
+    # scale would be e^5157, so GSAS takes the scale of V_hat = D^zeta V (fracdist Definition 7.4), rescaled=True.
+    alpha, k = 0.0012859442177304069, 3021.8240998213632
+    mean, sd = -0.000796, 0.016723
+
+    def test_pdf_matches_gsas_mixture_pdf(self):
+        """Fails when GSAS cannot represent the bear state: the constructor builds frac_chi_mean (sigma underflows),
+        the log-inversion grid forms e^{E log V} (overflow), or the scale is off. The reference,
+        gsas_dist.gsas_mixture_pdf, works in centred log units and never needs sigma or D."""
+        unit = GSAS(alpha=self.alpha, k=self.k, rescaled=True)
+        scale_hat = self.sd / np.sqrt(unit.var_by_log_moment())
+        assert 0.1 * self.sd < scale_hat < 10 * self.sd        # O(sd) with D, e^5157 without
+        rv = GSAS(alpha=self.alpha, k=self.k, scale=scale_hat, loc=self.mean, rescaled=True)
+        x = np.array([0.0, 0.005, -0.005, 0.01, -0.01])
+        expected = gsas_mixture_pdf(self.alpha, self.k, x, self.mean, self.sd)
+        assert np.max(np.abs(rv.pdf_by_log_inversion(x) / expected - 1)) < 1e-6
+
+    def test_reproduces_the_kurtosis_it_was_fitted_to(self):
+        """At the bear state the fcm_moment path gives nan (0 * inf); the log moments must give back the sample excess
+        kurtosis 5.4009 that (alpha, k) were inverted from, and the zero mean and skew of a symmetric law."""
+        g = GSAS(alpha=self.alpha, k=self.k, rescaled=True)
+        assert np.isclose(g.kurtosis_by_log_moment(), 5.4009, atol=1e-4)
+        assert abs(g.mean_by_log_moment()) < 1e-15 and abs(g.skew_by_log_moment()) < 1e-15

@@ -162,7 +162,7 @@ class InverseStable:
 
 
 # ---------------------------------------------------------------------
-class TitledStable2(TiltedKanter):
+class TiltedStable2(TiltedKanter):
     def __init__(self, alpha, beta, grid_size=TILT_GRID_SIZE, rng=None):
         # X = T_{alpha,beta}^{-alpha}
         super().__init__(alpha, beta, grid_size=grid_size, rng=rng)
@@ -191,14 +191,14 @@ class TitledStable2(TiltedKanter):
         return c * tilt * inverse_stable_pdf(x, self.alpha)
 
 
-class TitledStable3(TiltedKanter):
+class TiltedStable3(TiltedKanter):
     def __init__(self, alpha, beta, gamma, grid_size=TILT_GRID_SIZE, rng=None):
-        # X = T_{alpha,beta}^{-gamma}; gamma is the positive exponent in the negative power.
+        # X = T_{alpha,beta}^{-gamma}; gamma may have either sign.
         # The inverse stable/M-Wright special case is beta=0 and gamma=alpha.
         super().__init__(alpha, beta, grid_size=grid_size, rng=rng)
         self.gamma: float = float(gamma)
         # debug
-        # print(f"TitledStable3: alpha {self.alpha:.3f} beta {self.beta:.3f} gamma {self.gamma:.3f}")
+        # print(f"TiltedStable3: alpha {self.alpha:.3f} beta {self.beta:.3f} gamma {self.gamma:.3f}")
 
 
     def log_rvs(self, size):
@@ -257,7 +257,7 @@ class TitledStable3(TiltedKanter):
         return np.sqrt(self.variance())
 
 
-class TitledStable(TitledStable3):
+class TiltedStable(TiltedStable3):
     # X = T_{alpha,beta}, the two-parameter base of the tilted stable law
     # created for validation, e.g. the PDF formula mentioned in the Introduction
     def __init__(self, alpha, beta, grid_size=TILT_GRID_SIZE, rng=None):
@@ -268,21 +268,27 @@ class TitledStable(TitledStable3):
         return c * np.power(x, -self.beta) * one_sided_stable_pdf(x, self.alpha)
 
 
+# Preserve existing imports while exposing the correctly spelled class names.
+TitledStable2 = TiltedStable2
+TitledStable3 = TiltedStable3
+TitledStable = TiltedStable
+
+
 # NOT lru_cached: these objects carry an rng, so caching one would pin a single random
 # stream for the life of the process and silently ignore a caller's seed. The costly part,
 # the inverse-CDF grid, is cached in get_tilted_kanter_grid instead.
 def get_tilted_stable2(alpha, beta, rng=None):
-    return TitledStable2(alpha, beta, rng=rng)
+    return TiltedStable2(alpha, beta, rng=rng)
 
 
 def get_tilted_stable3(alpha, beta, gamma, rng=None):
-    return TitledStable3(alpha, beta, gamma, rng=rng)
+    return TiltedStable3(alpha, beta, gamma, rng=rng)
 
 
 # ----------------------------------------------
 # ----------------------------------------------
 # ----------------------------------------------
-class PitmanYorRestaurant(TitledStable3):
+class PitmanYorRestaurant(TiltedStable3):
     def __init__(self, alpha: float, beta: float, gamma: float, num_customers: int, rng=None):
         # T_{alpha,beta}^{-gamma} == T_{discount,strength}^{-power}. Hence,
         #    alpha is discount
@@ -459,7 +465,7 @@ class PitmanYorRestaurant(TitledStable3):
         Return both sample arrays when they are needed for further diagnostics.
         """
         py_samples, _ = self.pitman_yor_rvs(size=size)
-        kanter_samples = self.rvs(size)  # this is TitledStable3's rvs
+        kanter_samples = self.rvs(size)  # this is TiltedStable3's rvs
         ks = ks_2samp(py_samples, kanter_samples)
         if return_samples:
             return ks, py_samples, kanter_samples

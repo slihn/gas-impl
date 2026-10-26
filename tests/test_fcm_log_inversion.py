@@ -10,7 +10,7 @@ import mpmath as mp
 import pytest
 from scipy.special import digamma
 
-from .fcm_dist import FracChiMean, loggamma_diff
+from .fcm_dist import FracChiMean, loggamma_diff, fcm_lognormal_scaling_constant, fcm_moment
 
 
 def _f_u_mpmath(alpha, k, u, theta=0.0, t_max_sd=300):
@@ -97,3 +97,34 @@ def test_loggamma_diff_has_no_cancellation_at_large_x(x):
     for h in (0.5j, 37j, 150j, -4.0, 1.0, 3 + 5j, 1e-6j):
         ref = complex(mp.loggamma(mp.mpf(x) + mp.mpc(h)) - mp.loggamma(mp.mpf(x)))
         assert abs(complex(loggamma_diff(x, h)) - ref) / max(1.0, abs(ref)) < 1e-14
+
+
+# ---- D of fracdist Definition 7.4: V_hat = D^zeta V, the lognormal-compatible scaling --------------------------------
+
+@pytest.mark.parametrize("alpha, k", [(1.0, 5.0), (2.0, 5.0), (0.3, 1.0), (0.3, -1.0)])
+def test_D_is_one_at_its_specializations(alpha, k):
+    """Definition 7.4: D = 1 at alpha = 1, alpha = 2 and |k| = 1, which preserves those special cases."""
+    assert abs(fcm_lognormal_scaling_constant(alpha, k)) < 1e-15
+
+
+@pytest.mark.parametrize("sign", [1, -1])
+def test_rescaled_log_mean_reaches_the_lemma_7_5_limit(sign):
+    """Lemma 7.5: on the lognormal path (alpha |k| -> 1/tau^2), E[log V_hat] -> log(2)/2 - tau^2 for k > 0 and -log(2)/2
+    for k < 0, while E[log V] itself runs off (about +-19562 at |k| = 1e4). Fails when D's sign, exponent or branch
+    handling is wrong."""
+    tau2, z = 0.25, 1e4
+    f = FracChiMean(1 / (0.5 + tau2 * z), z + 1 if sign > 0 else -z)
+    limit = 0.5 * np.log(2) - tau2 if sign > 0 else -0.5 * np.log(2)
+    assert abs(f.log_mean()) > 1e4
+    assert abs(f.log_mean(rescaled=True) - limit) < 1e-3
+
+
+@pytest.mark.parametrize("alpha, k", [(0.9, 3.13), (0.5, 6.0), (1.2, -3.0), (0.8884, -3.2558)])
+def test_log_moment_matches_fcm_moment(alpha, k):
+    """log_moment is exact: log E[V^s] equals log fcm_moment (mpmath) where that is representable, and the rescaled
+    version is shifted by zeta s log D, since E[V_hat^s] = D^(zeta s) E[V^s]."""
+    f = FracChiMean(alpha, k)
+    for s in (-2.0, -1.0, 1.0, 2.0):
+        exact = np.log(fcm_moment(s, alpha, k))
+        assert abs(f.log_moment(s) - exact) < 1e-12
+        assert abs(f.log_moment(s, rescaled=True) - (exact + s * np.sign(k) * fcm_lognormal_scaling_constant(alpha, k))) < 1e-12

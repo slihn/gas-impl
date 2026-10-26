@@ -9,12 +9,26 @@ from scipy.integrate import quad
 
 
 from .stable_count_dist import stable_count
+from .fcm_dist import FracChiMean
 
 
 def mp_gamma(z):
     if z > 0: return mp.gamma(z) 
     if z < 0: return mp.pi / mp.gamma(1-z) / mp.sin(z * mp.pi)
     return mp.inf
+
+# --------------------------------------------------------------------------------
+# not meant for production use
+# this is Claude's version of GSAS pdf using log-invesion, without complicated __init__ problems
+# use this to validate GAS_SN implementation and data near LNN line, such as the bear state
+def gsas_mixture_pdf(alpha, k, xg, mean, sd, n_u=4001):
+    # X = Z/V with V ~ FCM(alpha, k), Z ~ N(0, 1). With U = log V - E log V, X e^{E log V} = Z e^{-U}, so after rescaling to
+    # sd(X) = sd: f_X(x) = (1/c) int e^u phi(((x - mean)/c) e^u) f_U(u) du, with c = sd / sqrt(E e^{-2U}). sigma never appears.
+    f = FracChiMean(alpha, k); su = np.sqrt(f.log_var())
+    u = np.linspace(-14*su, 14*su, n_u); fu = f.log_v_pdf(u)
+    c = sd/np.sqrt(np.trapz(np.exp(-2*u)*fu, u))
+    y = (np.asarray(xg, dtype=float)[:, None] - mean)/c*np.exp(u)[None, :]
+    return np.trapz(np.exp(u)[None, :]*norm.pdf(y)*fu[None, :], u, axis=1)/c
 
 
 # --------------------------------------------------------------------------------

@@ -26,6 +26,15 @@ def fcm_sigma(alpha: float, k: float, theta: float = 0.0):
     return abs(k)**(g - 1/alpha) * (g**g)
 
 
+def fcm_lognormal_scaling_constant(alpha: float, k: float) -> float:
+    # returns log D, NOT D, of the lognormal-compatible scaling of Definition 7.4, (7.24): V_hat = D^zeta V, zeta = sign(k),
+    #     D = [alpha^(1/alpha) 2^((1 - alpha)/2)]^(1 - 1/k^2)
+    # Even in k; D = 1 at alpha = 1, alpha = 2 and |k| = 1. Lemma 7.5: E[log V_hat] stays O(1) on the lognormal path
+    # (alpha |k| -> 1/tau^2), while E[log V] runs off to e.g. 5157 at alpha = 0.0013, k = 3022 -- so keep it in log form.
+    alpha, k = float(alpha), float(k)
+    return (1.0 - 1.0 / k**2) * (np.log(alpha) / alpha + 0.5 * (1.0 - alpha) * np.log(2.0))
+
+
 def fcm_moment(n: float, alpha: float, k: float, theta: float = 0.0, k_mean=True):
     # k_mean = False is for classic chi distribution
     # we use mpf for cancellation and large k, not for output, but you need to set the precision
@@ -172,13 +181,27 @@ class FracChiMean:
         return (loggamma_diff(self.eps * z, self.eps * sg * s)
                 - loggamma_diff(self.g * z, self.g * sg * s))
 
-    def log_mean(self) -> float:
+    def log_mean(self, rescaled: bool = False) -> float:
         # E[log V] = +- log(sigma) + K'(0), exact. log(sigma) analytically: sigma = |k|^(g - eps) g^g
-        # underflows to 0 at large |k| (e.g. 1000^-249.5), so never take np.log(fcm_sigma(...)) here
+        # underflows to 0 at large |k| (e.g. 1000^-249.5), so never take np.log(fcm_sigma(...)) here.
+        # rescaled=True gives E[log V_hat] for V_hat = D^zeta V (Definition 7.4): + zeta log D, O(1) on the lognormal path.
         z, sg = self._log_inversion_branch()
         log_sigma = (self.g - self.eps) * np.log(abs(self.k)) + self.g * np.log(self.g)
         k1 = sg * (self.eps * digamma(z * self.eps) - self.g * digamma(self.g * z))
-        return float(sg * log_sigma + k1)
+        return float(sg * log_sigma + k1 + (sg * self._log_D() if rescaled else 0.0))
+
+    def _log_D(self) -> float:
+        # log D of Definition 7.4, defined for theta = 0
+        assert self.theta == 0, "D (Definition 7.4) is defined for theta = 0"
+        return fcm_lognormal_scaling_constant(self.alpha, self.k)
+
+    def log_moment(self, s: float, rescaled: bool = False) -> float:
+        # log E[V^s] = s E[log V] + K(s) - s K'(0), exact (Mellin), for real s in the moment domain. Never forms sigma,
+        # so it is finite where fcm_moment underflows (fcm_moment(-2) = 0.0 at alpha = 0.0013, k = 3022).
+        # rescaled=True: log E[V_hat^s], V_hat = D^zeta V (Definition 7.4).
+        z, sg = self._log_inversion_branch()
+        k1 = sg * (self.eps * digamma(z * self.eps) - self.g * digamma(self.g * z))
+        return float(s * self.log_mean(rescaled=rescaled) + np.real(self._log_cgf(s)) - s * k1)
 
     def log_var(self) -> float:
         # Var[log V] = K''(0), exact
@@ -233,16 +256,17 @@ class FracChiMean:
             raise ValueError(f"method must be 'trapezoid' or 'quad', got {method!r}")
         return out if np.ndim(u) else float(out[0])
 
-    def log_pdf_by_log_inversion(self, log_x, t_sd: float = 40.0) -> float:
+    def log_pdf_by_log_inversion(self, log_x, t_sd: float = 40.0, rescaled: bool = False) -> float:
         """log f_V(x) at x = exp(log_x). Takes log x because at large |k| x itself is not a float:
-        E[log V] ~ 1380 at k = 1000 on the lognormal path, beyond float's e^709."""
-        return float(np.log(self.log_v_pdf(log_x - self.log_mean(), t_sd=t_sd)) - log_x)
+        E[log V] ~ 1380 at k = 1000 on the lognormal path, beyond float's e^709.
+        rescaled=True is the density of V_hat = D^zeta V (Definition 7.4), whose x stays O(1) on that path."""
+        return float(np.log(self.log_v_pdf(log_x - self.log_mean(rescaled=rescaled), t_sd=t_sd)) - log_x)
 
-    def pdf_by_log_inversion(self, x, log: bool = False, t_sd: float = 40.0):
+    def pdf_by_log_inversion(self, x, log: bool = False, t_sd: float = 40.0, rescaled: bool = False):
         """pdf of V at x via log_v_pdf: f_V(x) = f_U(log x - E[log V]) / x. log=True returns log f_V(x).
-        For x beyond float range use log_pdf_by_log_inversion(log_x)."""
+        For x beyond float range use log_pdf_by_log_inversion(log_x). rescaled=True: the pdf of V_hat."""
         assert x > 0
-        lp = self.log_pdf_by_log_inversion(np.log(x), t_sd=t_sd)
+        lp = self.log_pdf_by_log_inversion(np.log(x), t_sd=t_sd, rescaled=rescaled)
         return lp if log else float(np.exp(lp))
 
     def cdf_by_gamma_star(self, x):
