@@ -1,16 +1,25 @@
 # gas-impl: The Fractional Distribution Family
 
-## GAS-SN: generalized alpha-stable distribution with skew-normal family
-
 ## Overview
 
-This package was upgraded in 2025 to incorporate the skew-normal family, called GAS-SN. 
-The GAS-SN distribution is the most flexible distribution to date; it can fit data sets with high skewness and kurtosis.
+The fractional distribution family extends and combines many classic distributions (see table below) with 
+* a fractional shape parameter, aka the stability index; and
+* a multivariate skew-normal kernel
+
+This distribution family is the most flexible distribution to date; it can fit data sets with sharper peak, large kurtosis, and high skewness.
+
+Two major univariate acronyms are:
+
+* GSAS: generalized symmetric alpha-stable distribution
+* GAS-SN: generalized alpha-stable distribution with skew-normal family
+
+It is proved that the return distribution of most financial assets could be fitted successfully with either GSAS or GAS-SN.
+
 
 * The content is written in a book format, available [here (fracdist.pdf)](docs/fracdist.pdf).
 * The [Oct-27 slides](docs/frac_slides.pdf) summarised the overall structure quite well. Talk was given on Oct 27, 2026 to celebrate Professor Mulvey's 80th birthday.
 
-As of October 2026, the relation to the tilted stable law (Devroye, 2009) was finalized.
+Editorial Note: As of October 2026, the relation to the tilted stable law (Devroye, 2009) was finalized.
 New results have been found. The book and the code library are under intense revision again.
 A lognormal-normal (LNN) limit has been found in GSAS (the symmetric case of GAS-SN). A canonical coordinate system is proposed.
 Any financial asset can be located on this chart from its kurtosis and peak density,
@@ -28,6 +37,7 @@ See the test cases for usage examples. Every function is tested in at least one 
 
 In late 2025, I decided to call this group of new distributions **The Fractional Distributions**.
 Many classic distributions are generalized into fractional distributions, such as:
+
 <table>
 <tr>
 <th> classic distribution </th><th> fractional distribution </th>
@@ -36,13 +46,21 @@ Many classic distributions are generalized into fractional distributions, such a
 </tr><tr>
 <td> chi/chi2 distribution </td><td> fractional chi/chi2 distribution (Chapter 7)</td>
 </tr><tr>
+<td> lognormal distribution </td><td> ditto (in closure)</td>
+</tr><tr>
 <td> F distribution </td><td> fractional F distribution (Chapter 8)</td>
 </tr><tr>
 <td> univariate skew-t distribution </td><td> univariate GAS-SN distribution (Chapter 12)</td>
 </tr><tr>
-<td> stable / Cauchy distributions  </td><td> ditto</td>
+<td> stable / Cauchy distributions  </td><td> univariate GSAS distribution</td>
+</tr><tr>
+<td> exponential power distributions  </td><td> univariate GSAS distribution</td>
+</tr><tr>
+<td> lognormal-normal distribution </td><td> ditto (in closure)</td>
 </tr><tr>
 <td> multivariate skew-t distribution </td><td> multivariate elliptical GAS-SN distribution (Chapter 15)</td>
+</tr><tr>
+<td> multivariate normal distribution </td><td> ditto (in closure)</td>
 </tr>
 </table>
 
