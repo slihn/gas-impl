@@ -1,18 +1,17 @@
-# gas-impl
+# gas-impl: The Fractional Distribution Family
+
 ## GAS-SN: generalized alpha-stable distribution with skew-normal family
 
-## Overview - Fractional Distributions
+## Overview
 
 This package was upgraded in 2025 to incorporate the skew-normal family, called GAS-SN. 
 The GAS-SN distribution is the most flexible distribution to date; it can fit data sets with high skewness and kurtosis.
 
-The content is written in a book format, available [here](docs/fracdist.pdf).
-As of July 2026, the book is in the late editing stage.
-In July 2026, I discovered that the fractional gamma distribution is equivalent
-to the inverse power of the tilted stable law (Devroye, 2009).
-The book might go through another revision, most likely a conceptual simplification.
+* The content is written in a book format, available [here (fracdist.pdf)](docs/fracdist.pdf).
+* The [Oct-27 slides](docs/frac_slides.pdf) summarised the overall structure quite well. Talk was given on Oct 27, 2026 to celebrate Professor Mulvey's 80th birthday.
 
-As of October 2026, new results have been found. The book and the code library are under intense revision again.
+As of October 2026, the relation to the tilted stable law (Devroye, 2009) was finalized.
+New results have been found. The book and the code library are under intense revision again.
 A lognormal-normal (LNN) limit has been found in GSAS (the symmetric case of GAS-SN). A canonical coordinate system is proposed.
 Any financial asset can be located on this chart from its kurtosis and peak density,
 much like a phase diagram:
