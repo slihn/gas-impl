@@ -3,12 +3,14 @@
 ## Overview
 
 The fractional distribution family extends and combines many classic distributions (see table below) with 
-* a fractional shape parameter, aka the stability index; and
-* a multivariate skew-normal kernel
+* the fractional shape parameter $\alpha$, aka the Lévy stability index;
+* the "degree of freedom" parameter: $d$ in fractional gamma or $k$ in fractional chi; and
+* the multivariate skew-normal kernel $N(\mu, \Sigma, \beta)$.
+
 
 This distribution family is the most flexible distribution to date; it can fit data sets with sharper peak, large kurtosis, and high skewness.
 
-Two major univariate acronyms are:
+Two major univariate distributions are:
 
 * GSAS: generalized symmetric alpha-stable distribution
 * GAS-SN: generalized alpha-stable distribution with skew-normal family
@@ -63,23 +65,6 @@ Many classic distributions are generalized into fractional distributions, such a
 <td> multivariate normal distribution </td><td> ditto (in closure)</td>
 </tr>
 </table>
-
-## Physical Interpretation
-
-The parameters of this family have physical meanings in fractional transport problems, where they represent self-similar anomalous diffusion:
-
-* $\alpha$ is the Lévy index that acts as the temporal scaling exponent.
-* $p$ (fractional gamma distribution) acts as the spatial scaling exponent.
-
-In the fractional chi/chi2 distribution, $p = \alpha$.
-The space and time scales are synchronized. The PDF retains its exact shape as it dilates over time.
-This makes the distribution structurally invariant under scaling transformations, 
-establishing a bridge to fractional Brownian motion.
-
-When $\alpha = 1$,
-
-* $k$ is the degrees of freedom. It encapsulates the spatial dimension or fractal topology.
-
 
 
 ## Demo
