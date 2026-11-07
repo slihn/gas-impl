@@ -12,10 +12,6 @@
 
 </div>
 
-> [!NOTE]
-> **Editorial note.** As of October 2026, the relation to the tilted stable law (Devroye, 2009) was finalized.
-> New results have been found. The book and the code library are under intense revision again.
-
 ## Overview
 
 The fractional distribution family extends and combines many classic distributions (see table below) with
@@ -35,19 +31,23 @@ It is proved that the return distribution of most financial assets could be fitt
 The content is written in a book format, available [here (fracdist.pdf)](docs/fracdist.pdf).
 The [Oct-27 slides](docs/frac_slides.pdf) summarised the overall structure quite well. Talk was given on Oct 27, 2026 to celebrate Professor Mulvey's 80th birthday.
 
-### The lognormal-normal limit
+### The lognormal-normal limit and the tempered stable approximation
 
-A lognormal-normal (LNN) limit has been found in GSAS (the symmetric case of GAS-SN). A canonical coordinate system is proposed.
-Any financial asset can be located on the chart above from its kurtosis and peak density,
-much like a phase diagram.
+In September of 2025, the lognormal-normal (LNN) limit has been found in GSAS (the symmetric case of GAS-SN). 
+A canonical coordinate system and the phase diagram were proposed as shown in the chart above.
+Any financial asset can be located on the chart from its kurtosis and peak density.
 
-Near the lognormal limit, a connection to the tempered stable law has also been found.
+Near such lognormal limit of fractional chi, a connection between its log variable and the tempered stable law has also been found.
 I think the discovery of this limit is a big breakthrough for applications to real-world data.
 
 ## List of Distributions
 
 In late 2025, I decided to call this group of new distributions **The Fractional Distributions**.
-Many classic distributions are generalized into fractional distributions, such as:
+Many classic distributions are generalized into fractional distributions.
+
+In mid-2026, the relation between the three-parameter **tilted stable law** $T_{a,b}^{c}$ (Devroye, 2009) and fractional gamma/chi was established.
+
+The following table lists the mapping from the classic distribution to the fractional distribution and its random variable:
 
 | Classic&nbsp;distribution | Classic Notation | Fractional distribution | Fractional notation | Tilted stable law equiv. |
 |---|---|---|---|---|
