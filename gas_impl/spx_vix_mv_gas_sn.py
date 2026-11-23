@@ -13,12 +13,7 @@ from diskcache import FanoutCache
 
 from pyro.contrib.examples.finance import load_snp500
 
-
-from adp_tf.jubilee.vix import VIX 
-from adp_tf.jubilee.spx import SPX
-from adp_tf.stable_count.fcm_dist import frac_chi_mean 
-
-from .gas_dist import gas_sn
+from .gas_sn_dist import gas_sn
 from .multivariate_sn import Multivariate_GAS_SN, Multivariate_GAS_SN_Adp_2D, _calc_rho
 
 
@@ -34,15 +29,16 @@ def _mgas_get_pdf1(g, x):
 
 # -----------------------------------------------------------
 class SPX_VIX_Data:
-    def __init__(self, num_bins=200, end_date=pd.to_datetime('2024-03-31')):
+    def __init__(self, data_getter, num_bins=200, end_date=pd.to_datetime('2024-03-31')):
+        # data_getter is class with two methods VIX() and SPX()
         self.end_date = end_date
         self.vix_cutoff = 0.3
         self.spx_cutoff = 0.05
         self.num_bins = num_bins
 
-        self.vix = VIX()
+        self.vix = data_getter.VIX()
         self.vix.df['rtn'] = self.vix.df['px'].pct_change()
-        self.spx = SPX()
+        self.spx = data_getter.SPX()
         self.spx.df['rtn'] = self.spx.df['px'].pct_change()
 
         self.data_df = self.get_data_df()

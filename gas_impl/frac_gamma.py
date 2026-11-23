@@ -1,5 +1,5 @@
 
-from adp_tf.stable_count.wright_levy_asymp import wright_f_fn_by_levy_asymp
+
 import numpy as np
 import pandas as pd
 from scipy.special import gamma

@@ -1,5 +1,4 @@
 import numpy as np
-from sympy import O 
 import pandas as pd
 import mpmath as mp
 from typing import Optional

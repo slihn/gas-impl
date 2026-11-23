@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 from gas_impl import __version__
 
@@ -10,7 +10,7 @@ setup(
     author='Stephen H. Lihn',
     author_email='stevelihn@gmail.com',
 
-    py_modules=['gas_impl'],
+    packages=find_packages(include=['gas_impl', 'gas_impl.*']),
     
     install_requires=[
         'numpy',

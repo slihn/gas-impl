@@ -5,7 +5,6 @@
 import numpy as np
 import scipy.special as sc
 
-from scipy._lib._util import _lazywhere
 from scipy.stats._distn_infrastructure import rv_continuous, _ShapeInfo
 from scipy.stats import beta
 
@@ -98,12 +97,12 @@ class jf_skew_t_gen(rv_continuous):
             return num / denom * sum_terms.sum()
 
         nth_moment_valid = (a > 0.5 * n) & (b > 0.5 * n) & (n >= 0)
-        return _lazywhere(
-            nth_moment_valid,
-            (n, a, b),
-            np.vectorize(nth_moment, otypes=[np.float64]),  # type: ignore
-            np.nan,
-        )
+        # compute only where the moment exists, nan elsewhere (was scipy's private _lazywhere)
+        n, a, b, ok = np.broadcast_arrays(n, a, b, nth_moment_valid)
+        out = np.full(ok.shape, np.nan)
+        if ok.any():
+            out[ok] = np.vectorize(nth_moment, otypes=[np.float64])(n[ok], a[ok], b[ok])
+        return out[()]
 
 
 jf_skew_t = jf_skew_t_gen(name='jf_skew_t')
