@@ -51,14 +51,14 @@ The following table lists the mapping from the classic distribution to the fract
 
 | Classic&nbsp;distribution | Classic Notation | Fractional distribution | Fractional notation | Tilted stable law equiv. |
 |---|---|---|---|---|
-| generalized&nbsp;gamma&nbsp;distribution | $\operatorname{GG}(\sigma,d,p)$ | fractional gamma distribution (Chapter 6) | $N_\alpha(\sigma,d,p)$ | $\sigma\thinspace T^{-\alpha/p}_{\alpha,\mskip5mu \alpha d/p}$ |
-| chi&nbsp;distribution | $\chi_k$ | fractional chi distribution (Chapter 7) | $\bar\chi_{\alpha,k}$ | $\sigma_{\alpha,k}^\zeta \thinspace T_{\alpha/2,z/2}^{-\zeta/2}$ <br>where $\zeta = \operatorname{sign}(k)$ and<br> $z = k-1$ for $k \ge 1$,<br>$z = \|k\|$ for $k < 0$. |
+| generalized&nbsp;gamma&nbsp;distribution | $\mathrm{GG}(\sigma,d,p)$ | fractional gamma distribution (Chapter 6) | $N_\alpha(\sigma,d,p)$ | $\sigma\thinspace T^{-\alpha/p}_{\alpha,\mskip5mu \alpha d/p}$ |
+| chi&nbsp;distribution | $\chi_k$ | fractional chi distribution (Chapter 7) | $\bar\chi_{\alpha,k}$ | $\sigma_{\alpha,k}^\zeta \thinspace T_{\alpha/2,z/2}^{-\zeta/2}$ <br>where $\zeta = \mathrm{sign}(k)$ and<br> $z = k-1$ for $k \ge 1$,<br>$z = \|k\|$ for $k < 0$. |
 | F&nbsp;distribution | $F_{d,k}$ ($d$ dimension) | fractional F distribution (Chapter 8) | $F_{\alpha,d,k}$ | $\chi^2_d / (d \thinspace \bar\chi^2_{\alpha,k})$ |
 | symmetric&nbsp;$\alpha$&#8209;stable&nbsp;distribution<br>exponential&nbsp;power&nbsp;distribution<br>Student's&nbsp;t | $L_{\alpha}$<br>$\mathcal{E}_{\alpha}$<br>$t_k$ | univariate GSAS distribution (Chapter 12) | $L_{\alpha,k}$ | $N(0,1) / \bar\chi_{\alpha,k}$ |
 | univariate&nbsp;skew&#8209;t&nbsp;distribution | $t_{k,\beta}$ | univariate GAS-SN distribution (Chapter 12) | $L_{\alpha,k}(\beta)$ | $SN(0,1,\beta) / \bar\chi_{\alpha,k}$ |
 | multivariate&nbsp;skew&#8209;t&nbsp;distribution | $t_k(0,\Omega,\beta)$ | multivariate elliptical GAS-SN distribution (Chapter 15) | $L_{\alpha,k}(\Omega, \beta)$ | $SN(0,\Omega,\beta) / \bar\chi_{\alpha,k}$ |
-| lognormal&nbsp;distribution | $\operatorname{LN}(0, \tau^2_{LN})$ | in closure of rescaled fractional chi | | $V' = \exp(\log V - E[\log V])$, <br>where $V = \bar\chi_{\alpha,k}$, <br>$z \to \infty, \delta/z \to \tau^2_{LN} > 0$ <br>and $\delta = 1/\alpha - \tfrac{1}{2}$ |
-| lognormal&#8209;normal&nbsp;distribution | $\operatorname{LNN}(\tau^2_{LN})$ | in closure of rescaled GSAS | | $N(0,1) / V'$ |
+| lognormal&nbsp;distribution | $\mathrm{LN}(0, \tau^2_{LN})$ | in closure of rescaled fractional chi | | $V' = \exp(\log V - E[\log V])$, <br>where $V = \bar\chi_{\alpha,k}$, <br>$z \to \infty, \delta/z \to \tau^2_{LN} > 0$ <br>and $\delta = 1/\alpha - \tfrac{1}{2}$ |
+| lognormal&#8209;normal&nbsp;distribution | $\mathrm{LNN}(\tau^2_{LN})$ | in closure of rescaled GSAS | | $N(0,1) / V'$ |
 | multivariate&nbsp;normal&nbsp;distribution | $N_d(0,\Omega)$ | in closure of multivariate GSAS<br>after variance normalization |  | $L_{\alpha,k}(\Omega, \beta=0)$ <br>where $\alpha \to 2$ or $k \to \pm\infty$ at fixed $\alpha$ |
 
 ## Demo
