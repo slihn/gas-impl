@@ -130,7 +130,8 @@ def loggamma_diff(x: float, h, x_min: float = 20.0):
 
 
 class FracChiMean:
-    # this is primarily to facilitate the testings, especially for the Mellin transform
+    # this was primarily to facilitate the Mellin transform
+    # but it is extended for log inversion algorithm, used heavily for GAS-SN and GSAS near the LNN limit
     def __init__(self, alpha, k, theta=0.0):
         self.alpha = alpha
         self.k = k
