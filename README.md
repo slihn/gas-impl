@@ -138,3 +138,13 @@ from gas_impl.stats import gas_sn
 g = gas_sn(alpha=1.1, k=2.5, beta=0.5)
 g.pdf(0.25)  # 0.35881...
 ```
+
+To fit GSaS to real data, open the notebook [gsas_ticker_fit.ipynb](gsas_ticker_fit.ipynb).
+Set `TICKER` to any Yahoo symbol (e.g. SPY, QQQ, AAPL), then run all cells.
+The notebook downloads the daily prices, fits $(\alpha, k)$ with `GSaS_Fit`,
+and plots the ticker on the GSaS plane, along with the fitted pdf, log pdf, and Q-Q plot.
+It needs `yfinance`, which is not installed with this package:
+
+```bash
+pip install yfinance
+```
