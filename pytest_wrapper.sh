@@ -28,14 +28,12 @@ Options:
   --pytest-help     show pytest's own help (pytest -h)
 
 Notes:
-  gas_impl imports adp_tf, so the parent folder of gas-impl and adp_tf goes on PYTHONPATH.
   On a name clash (test_fcm_t.py is in both gas_impl/ and tests/) the tests/ copy wins.
   The exit code is pytest's; 2 also means an unknown test file was named.
 EOF
 }
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(dirname "$HERE")"
 PYTHON="${PYTHON:-python}"
 
 for a in "$@"; do
@@ -69,6 +67,6 @@ fi
 
 cd "$WORK"
 rc=0
-PYTHONPATH="$WORK:$ROOT/adp_tf:$ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+PYTHONPATH="$WORK${PYTHONPATH:+:$PYTHONPATH}" \
     "$PYTHON" -m pytest -p no:cacheprovider --rootdir="$WORK" "${args[@]}" || rc=$?
 exit "$rc"

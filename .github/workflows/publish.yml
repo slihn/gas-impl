@@ -1,0 +1,68 @@
+# Build gas_impl and publish it with PyPI Trusted Publishing (no API token stored in GitHub).
+#   - Publishing a GitHub release        -> PyPI
+#   - Run workflow manually (Actions tab) -> TestPyPI, for a dry run
+# One-time setup: add this repo as a trusted publisher on pypi.org and test.pypi.org
+# (workflow publish.yml, environments "pypi" and "testpypi").
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Smoke test the installed wheel
+        run: |
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          python -c "from gas_impl.stats import gsas; import gas_impl.gsas_fit; v = gsas(alpha=1.1, k=2.5).pdf(0.25); print(v); assert abs(v - 0.32678) < 1e-4"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-pypi:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gas_impl
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-testpypi:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/gas_impl
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

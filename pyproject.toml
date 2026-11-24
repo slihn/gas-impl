@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gas_impl"
+dynamic = ["version"]
+description = "Reference implementation of the fractional distribution family: GSaS, GAS-SN, fractional chi/gamma/F, and the tilted stable law"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Stephen H. Lihn", email = "stevelihn@gmail.com" }]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "mpmath",
+    "tsquad",
+    "pandarallel",
+    "matplotlib",
+    "scikit-image",
+]
+
+[project.optional-dependencies]
+examples = ["yfinance"]                              # gsas_ticker_fit.ipynb
+spx = ["pyro-ppl", "torchvision", "diskcache"]       # spx_vix_mv.py, spx_vix_mv_gas_sn.py
+dev = ["pytest", "pandas-stubs", "scipy-stubs"]
+
+[project.urls]
+Homepage = "https://github.com/slihn/gas-impl"
+Source = "https://github.com/slihn/gas-impl"
+
+[tool.setuptools.dynamic]
+version = { attr = "gas_impl.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["gas_impl", "gas_impl.*"]

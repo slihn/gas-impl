@@ -91,28 +91,35 @@ See the test cases for usage examples. Every function is tested in at least one 
 
 ### Installation
 
-There are no plans to publish on PyPI yet.
+Install the released version from PyPI:
 
-Install directly from GitHub:
+```bash
+pip install gas_impl
+```
+
+Or install the latest code directly from GitHub:
 
 ```bash
 pip install git+https://github.com/slihn/gas-impl.git#egg=gas_impl
 ```
 
-If the above method doesn't work, a safer method is to `git clone` this repository into a local directory.
-Then run:
+To work on the code, `git clone` this repository into a local directory and install it in editable mode:
 
 ```bash
 cd /path-to/gas-impl
 pip install -e .
 ```
 
-You can run the test cases to make sure everything is working on your platform:
+You can run the test cases to make sure everything is working on your platform.
+The tests use relative imports, so run them through the wrapper script rather than plain `pytest`:
 
 ```bash
 cd /path-to/gas-impl
-pytest
+bash pytest_wrapper.sh                         # every test file
+bash pytest_wrapper.sh tests/test_gsas.py      # one file; other pytest options pass through
 ```
+
+Run `bash pytest_wrapper.sh -h` for more options.
 
 > [!IMPORTANT]
 > This package is developed under Linux/Ubuntu.
