@@ -30,7 +30,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-examples = ["yfinance"]                              # gsas_ticker_fit.ipynb
+regime = ["jumpmodels"]                              # gsas_regime.py
+examples = ["yfinance", "jumpmodels"]                # gsas_ticker_fit.ipynb, gsas_ticker_mixture.ipynb
 spx = ["pyro-ppl", "torchvision", "diskcache"]       # spx_vix_mv.py, spx_vix_mv_gas_sn.py
 dev = ["pytest", "pandas-stubs", "scipy-stubs"]
 
