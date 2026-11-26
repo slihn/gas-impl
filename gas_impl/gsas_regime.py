@@ -1,6 +1,7 @@
 """
-GSaS_JumpRegimes: split a return series into N regimes with a statistical jump model, then fit GSaS to the returns
-of each regime. The distribution of the ticker is the weighted mixture of the N regime GSaS distributions.
+GSaS_JumpRegimes: split a return series into N regimes with a statistical jump model, then fit GSaS (or LNEP, where
+GSaS has no solution) to the returns of each regime. The distribution of the ticker is the weighted mixture of the N
+regime distributions.
 
 The regime labels come from the jump model of Shu, Yu and Mulvey (2024), as in the BMDA dual-regime code, through
 the `jumpmodels` package. Features (for halflives 1, 5, 10, 21 days): the EWM return, the log EWM downside
@@ -19,18 +20,35 @@ regime sequence by dynamic programming (Viterbi); given the sequence, each centr
 features. It runs from n_init k-means++ starts and keeps the lowest objective. lambda = 0 is k-means on the
 features (no persistence); a larger lambda gives fewer, longer regimes.
 
-The weight of regime j is then its share of days, w_j = #{t : s_t = j} / n, and the regime's GSaS is GSaS_Fit on
-its returns (the moment-and-density fit). The mixture density is sum_j w_j f_j. A regime whose returns cannot be
-fitted is drawn as a normal with its sample mean and sd: fewer than 30 days, excess kurtosis <= 0, or a shape
-outside the GSaS region (e.g. a flatter peak than the normal's with positive kurtosis, which happens when a regime
-mixes periods of different drift: the features include EWM returns, so regimes separate by trend as well as
-volatility).
+The weight of regime j is then its share of days, w_j = #{t : s_t = j} / n. The mixture density is sum_j w_j f_j.
+The family of each regime is chosen by where its sample shape (v1, v2), the kurtosis and the standardized peak
+density, lies on the plane:
+
+    GSaS    GSaS_Fit, when its status is 'ok': v2 >= 0, every normal scale mixture. It matches (v1, v2) exactly,
+            with the regime's sample mean and sd; shape (alpha, k), and xi.
+    LNEP    LNEP_Fit (lnep_dist.py) by maximum likelihood, when GSaS has no solution and the regime's shape is
+            consistent with the LNEP region: v2 < 0, between the EP curve and the line v2 = v1 - 0.088. Consistent
+            means that at least lnep_min_p (5%) of n_boot block-bootstrap resamples of the regime (GSaS_Fit's
+            bootstrap_shape, 20-day blocks) land inside the region; the share is p_lnep. The point estimate alone
+            is not used: the region is a band of width 0.088 in v1 - v2, while the sampling sd of v1 - v2 is about
+            0.02-0.03 at a few thousand days, so one day of data can move a regime across the line. Maximum
+            likelihood, not the moments, because a moment match near the line forces alpha towards infinity (the
+            uniform kernel). Shape (lnep_alpha, s): the exponential-power exponent and the sd of the log-volatility.
+            It also covers some regimes with excess kurtosis <= 0.
+    normal  the regime's sample mean and sd, when neither fits or the regime has fewer than 30 days. A regime with
+            v2 < 0 beyond the LNEP band has a flat top with tails too heavy for any single scale law: it most
+            likely hides a sharp sub-regime, so try more regimes or another lambda (the 'note' column says so).
+
+A flatter peak than the normal's (v2 < 0) happens when a regime mixes periods of different drift: the features
+include EWM returns, so regimes separate by trend as well as volatility. The two families agree on the LNN
+diagonal (GSaS as k -> inf is LNEP at alpha = 2), but not across v2 = 0 for v1 > 0: just above it GSaS has
+alpha -> 2, k -> 3 and a power tail of index about 4, while just below it LNEP has light, lognormal-type tails.
 
 Regimes are numbered 1..N from calm to turbulent (by the sd of their returns).
 
 Usage:
     reg = GSaS_JumpRegimes(xs, n_regimes=2, jump_penalty=50).fit()   # xs: Series of simple returns, dated
-    reg.summary()             # DataFrame, one row per regime
+    reg.summary()             # DataFrame, one row per regime; drawn_as is 'GSaS', 'LNEP' or 'normal'
     reg.labels                # Series of regime numbers 1..N on the dates of xs
     reg.transition_matrix()   # DataFrame (N, N), the observed day-to-day switching frequencies
     reg.clip_report()         # DataFrame, the share of days each feature is clipped, plus rows 'any feature', 'all values'
@@ -43,16 +61,20 @@ from jumpmodels.jump import JumpModel
 from scipy.stats import norm
 
 from .gsas_fit import GSaS_Fit
+from .lnep_dist import LNEP_Fit
 
 
 class GSaS_JumpRegimes:
     HALFLIVES = (1, 5, 10, 21)
 
-    def __init__(self, xs, n_regimes=2, jump_penalty=50.0, clip_sd=4.0, n_init=10, random_state=0):
+    def __init__(self, xs, n_regimes=2, jump_penalty=50.0, clip_sd=4.0, n_init=10, random_state=0,
+                 n_boot=500, lnep_min_p=0.05):
         """
         xs: Series of simple returns indexed by date (an array is given a 0..n-1 index). n_regimes: N.
         jump_penalty: lambda, the cost of one regime switch in units of the standardized squared feature distance.
         clip_sd: features are clipped to mean +- clip_sd sd before scaling. n_init, random_state: jump model starts.
+        n_boot, lnep_min_p: a regime GSaS cannot fit is drawn as LNEP when at least lnep_min_p of n_boot block-
+        bootstrap resamples of its shape lie inside the LNEP region.
         """
         xs = pd.Series(xs, dtype=float) if not isinstance(xs, pd.Series) else xs.astype(float)
         if xs.isna().any() or len(xs) < 30*n_regimes:
@@ -61,6 +83,7 @@ class GSaS_JumpRegimes:
         self.n_regimes = int(n_regimes)
         self.jump_penalty, self.clip_sd = float(jump_penalty), float(clip_sd)
         self.n_init, self.random_state = int(n_init), random_state
+        self.n_boot, self.lnep_min_p = int(n_boot), float(lnep_min_p)
         self.fitted = False
 
     # ----------------------------------------------------------------------------------------------------
@@ -117,6 +140,9 @@ class GSaS_JumpRegimes:
         self.labels = pd.Series(relabel[raw], index=self.xs.index, name='regime')
         self.weights = np.array([(self.labels == j).mean() for j in range(1, self.n_regimes + 1)])
         self.fits = [self._fit_regime(self.xs.values[self.labels.values == j]) for j in range(1, self.n_regimes + 1)]
+        self.p_lnep = [self._p_lnep(fit) for fit in self.fits]
+        self.lnep_fits = [LNEP_Fit(self.xs.values[self.labels.values == j]) if p >= self.lnep_min_p else None
+                          for j, p in enumerate(self.p_lnep, start=1)]
         self.jump_model = jm
         self.fitted = True
         return self
@@ -126,9 +152,25 @@ class GSaS_JumpRegimes:
         # GSaS_Fit on a regime's returns, None when it has fewer than 30 days
         return GSaS_Fit(x) if len(x) >= 30 else None
 
-    def _is_gsas(self, j):
-        # regime j (0-based) is drawn as its GSaS fit; otherwise as a normal
-        return self.fits[j] is not None and self.fits[j].status == 'ok'
+    def _p_lnep(self, gsas_fit):
+        # share of block-bootstrap resamples whose shape lies inside the LNEP region; nan when GSaS fits or the
+        # regime has fewer than 30 days (LNEP is not tried)
+        if gsas_fit is None or gsas_fit.status == 'ok':
+            return np.nan
+        b = gsas_fit.bootstrap_shape(B=self.n_boot, seed=self.random_state)
+        return float(np.mean([LNEP_Fit.invert(v1, v2)[2] == 'ok' for v1, v2 in zip(b.v1, b.v2)]))
+
+    def _family(self, j):
+        # how regime j (0-based) is drawn: 'GSaS', 'LNEP' or 'normal'
+        if self.fits[j] is not None and self.fits[j].status == 'ok':
+            return 'GSaS'
+        if self.lnep_fits[j] is not None and self.lnep_fits[j].status == 'ok':
+            return 'LNEP'
+        return 'normal'
+
+    def _model(self, j):
+        # the fit object regime j is drawn from, or None for the normal
+        return {'GSaS': self.fits[j], 'LNEP': self.lnep_fits[j], 'normal': None}[self._family(j)]
 
     # ----------------------------------------------------------------------------------------------------
     # results
@@ -150,9 +192,12 @@ class GSaS_JumpRegimes:
         """
         One row per regime, calm to turbulent. Returns a DataFrame with columns weight (share of days), days, runs
         (number of runs), mean_run (average run length in days), mean, sd, skew, exkurt, SPD, v1, v2 (the sample
-        shape), alpha, k, xi (nan when not fitted), status (GSaS_Fit's: 'ok', 'exkurt <= 0' or 'no solution', the
-        last when the sample shape lies outside the GSaS region; or 'too few days') and drawn_as ('GSaS' or
-        'normal').
+        shape), alpha, k, xi (the GSaS shape, nan unless drawn as GSaS), status (GSaS_Fit's: 'ok', 'exkurt <= 0' or
+        'no solution', the last when the sample shape lies outside the GSaS region; or 'too few days'), drawn_as
+        ('GSaS', 'LNEP' or 'normal'), lnep_alpha, s (the LNEP maximum-likelihood shape, nan unless drawn as LNEP),
+        lnep_status (LNEP_Fit's 'ok' or 'not converged'; 'p < lnep_min_p' when the shape is not consistent with the
+        LNEP region; '' when not tried), p_lnep (the bootstrap share inside the LNEP region; nan when not tried) and
+        note (why a regime is drawn as a normal; '' otherwise).
         """
         self._require_fit()
         runs = self.runs()
@@ -167,7 +212,16 @@ class GSaS_JumpRegimes:
                 row.update({c: s[c] for c in ['exkurt', 'SPD', 'v1', 'v2', 'alpha', 'k', 'xi', 'status']})
             else:
                 row.update(status='too few days')
-            row['drawn_as'] = 'GSaS' if self._is_gsas(j - 1) else 'normal'
+            lf, p, fam = self.lnep_fits[j - 1], self.p_lnep[j - 1], self._family(j - 1)
+            ok = lf is not None and lf.status == 'ok'
+            lnep_status = lf.status if lf is not None else ('' if np.isnan(p) else f'p < {self.lnep_min_p:g}')
+            note = ''
+            if fam == 'normal':
+                note = ('too few days' if fit is None else
+                        'v2 < 0 beyond the LNEP band: likely hides a sharp regime' if fit.shape['v2'] < 0 else
+                        'outside both regions')
+            row.update(drawn_as=fam, lnep_alpha=lf.alpha if ok else np.nan, s=lf.s if ok else np.nan,
+                       lnep_status=lnep_status, p_lnep=p, note=note)
             rows.append(row)
         return pd.DataFrame(rows).set_index('regime')
 
@@ -182,14 +236,16 @@ class GSaS_JumpRegimes:
         return out
 
     def _regime_pdf(self, j, xg):
-        if self._is_gsas(j):
-            return self.fits[j].pdf(xg)
+        m = self._model(j)
+        if m is not None:
+            return m.pdf(xg)
         x = self.xs.values[self.labels.values == j + 1]
         return norm.pdf(xg, x.mean(), x.std())
 
     def _regime_cdf(self, j, xg):
-        if self._is_gsas(j):
-            return self.fits[j].cdf(xg)
+        m = self._model(j)
+        if m is not None:
+            return m.cdf(xg)
         x = self.xs.values[self.labels.values == j + 1]
         return norm.cdf(xg, x.mean(), x.std())
 
