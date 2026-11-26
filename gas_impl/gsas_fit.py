@@ -3,7 +3,7 @@ Given an array of simple daily returns from one security, determine its GSaS sha
 
 The fit is the method of moments and density used by the gsas_ticker_fit notebooks (V4-xi, V4-sp500-stocks):
 match the excess kurtosis gamma2 (a sample moment) and the standardized peak density SPD (a bin-free density
-estimate at the median) by inverting the one-to-one map (alpha, k) -> (gamma2, SPD). On the implied log-variance
+estimate at the centre, widened to the sparsity maximum when the centre dips; see peak_report) by inverting the one-to-one map (alpha, k) -> (gamma2, SPD). On the implied log-variance
 plane, v1 = log(1 + gamma2/3)/4 and v2 = 2 log(sqrt(2 pi) SPD)/3; the LNN is the diagonal v1 = v2, k > 0 lies
 below it and k < 0 above it. xi = sign(k)/z, with z = k - 1 (k > 0) or |k| (k < 0), is k rewritten so that the
 LNN is xi = 0.
@@ -17,6 +17,7 @@ Usage:
     f.summary()                    # pd.Series of all of the above
     f.bootstrap_shape()            # pd.DataFrame of B block-bootstrap rows: v1, v2, skew
     f.gof()                        # pd.DataFrame of the H(-3) and Geary checks
+    GSaS_Fit.peak_report(returns)  # dict: the peak density, the central-dip test and, on a dip, the widened window
 """
 import warnings
 from functools import cached_property
@@ -34,6 +35,9 @@ from .fcm_dist import FracChiMean
 class GSaS_Fit:
     SQ2PI = np.sqrt(2*np.pi)
     PEAK_HS = np.array([0.04, 0.06, 0.08, 0.10, 0.12, 0.15, 0.20])   # quantile half-widths for the peak density
+    PEAK_WIDEN_HS = np.round(np.arange(0.04, 0.4001, 0.01), 2)       # half-widths searched when the centre dips
+    PEAK_RISE_SE = 2.65    # sd of the relative sparsity rise times sqrt(n), simulated on flat-top laws (EP(4), EP_LNN)
+    PEAK_DIP_Z = 1.645     # one-sided 5% for the central-dip test
     A3_NORMAL = 2*np.sqrt(2/np.pi)                                    # E|Z|^3 of a standard normal
     A1_NORMAL = np.sqrt(2/np.pi)                                      # E|Z| of a standard normal
     ALPHAS = np.concatenate([np.geomspace(0.01, 0.5, 400), np.linspace(0.5, 1.999, 800)])   # alpha grid of the k-curves
@@ -109,15 +113,55 @@ class GSaS_Fit:
     # ----------------------------------------------------------------------------------------------------
     # sample estimators
     # ----------------------------------------------------------------------------------------------------
+    @staticmethod
+    def sparsity(x, hs):
+        """Quantile sparsity 2h/(q(0.5+h) - q(0.5-h)) at each half-width h: the mean density over the central 2h of x."""
+        hs = np.asarray(hs, dtype=float)
+        q = np.quantile(x, np.concatenate([0.5 - hs, 0.5 + hs]))
+        return 2*hs/(q[len(hs):] - q[:len(hs)])
+
+    @classmethod
+    def peak_report(cls, x):
+        """
+        The peak density of x and how it was found. A single central peak makes the sparsity fall as the window
+        widens, so the O(h^2) fit over PEAK_HS is extrapolated to h = 0. A central dip (as in TLT 2022-24) makes it
+        rise instead; then the window is widened until the sparsity peaks, and that maximum is the peak.
+
+        The centrality test is on rise = b h_max^2/a, the relative change of the fit a + b h^2 from h = 0 to
+        h_max = max(PEAK_HS): a dip when rise > PEAK_DIP_Z * PEAK_RISE_SE/sqrt(n), one-sided 5% against a flat top
+        (zero curvature, the boundary between a peak and a dip). A normal sample has rise ~ -0.05 and switches
+        about 2% of the time at n = 753. On a dip, the sparsity over PEAK_WIDEN_HS is smoothed by a quadratic in h
+        and its maximum taken, which avoids the upward bias of the maximum of the raw, noisy values.
+
+        Returns a dict with keys:
+            peak        the peak density, in the units of 1/x
+            extrap      the h -> 0 extrapolation a
+            rise        the relative rise b h_max^2/a
+            threshold   the dip threshold for this n
+            dip         bool, rise > threshold
+            h_peak      the half-width of the widened maximum (0 when there is no dip)
+        """
+        n, hs = len(x), cls.PEAK_HS
+        a, b = np.linalg.lstsq(np.vstack([np.ones_like(hs), hs**2]).T, cls.sparsity(x, hs), rcond=None)[0]
+        rise, thr = b*hs.max()**2/a, cls.PEAK_DIP_Z*cls.PEAK_RISE_SE/np.sqrt(n)
+        out = dict(peak=float(a), extrap=float(a), rise=float(rise), threshold=float(thr), dip=bool(rise > thr), h_peak=0.0)
+        if out['dip']:
+            hg = cls.PEAK_WIDEN_HS
+            hh = np.linspace(hg[0], hg[-1], 721)
+            v = np.polyval(np.polyfit(hg, cls.sparsity(x, hg), 2), hh)
+            out.update(peak=float(v.max()), h_peak=float(hh[v.argmax()]))
+        return out
+
     @classmethod
     def peak_density(cls, x, hs=None):
         """
-        The bin-free density at the median: quantile sparsity 2h/(q(0.5+h) - q(0.5-h)) over the half-widths hs,
-        with its O(h^2) bias extrapolated to h = 0. In the units of 1/x.
+        The bin-free density at the centre, in the units of 1/x; see peak_report for the method. With hs given, the
+        plain O(h^2) extrapolation over those half-widths, without the centrality test.
         """
-        hs = cls.PEAK_HS if hs is None else np.asarray(hs, dtype=float)
-        f = np.array([2*h/np.diff(np.quantile(x, [0.5 - h, 0.5 + h]))[0] for h in hs])
-        return float(np.linalg.lstsq(np.vstack([np.ones_like(hs), hs**2]).T, f, rcond=None)[0][0])
+        if hs is None:
+            return cls.peak_report(x)['peak']
+        hs = np.asarray(hs, dtype=float)
+        return float(np.linalg.lstsq(np.vstack([np.ones_like(hs), hs**2]).T, cls.sparsity(x, hs), rcond=None)[0][0])
 
     @classmethod
     def sample_shape(cls, x):
