@@ -28,7 +28,7 @@ The plane. With v1 = log(1 + gamma2/3)/4 and v2 = 2 log(sqrt(2 pi) SPD)/3, the l
 
     v1 = v1_EP(alpha) + s^2,    v2 = v2_EP(alpha) + s^2,    so    v1 - v2 = D(alpha) = v1_EP(alpha) - v2_EP(alpha).
 
-Each alpha is a 45-degree ray from its EP point. D falls from +inf (alpha -> 0) through 0 (alpha = 2, the LNN
+Each alpha is a 45-degree ray from its EP point. D rises from -inf (alpha -> 0) through 0 (alpha = 2, the LNN
 diagonal) to D_MAX = 0.0880 (the uniform kernel, alpha -> inf), so the LNEP region is bounded by the EP curve on the
 left and by the line v2 = v1 - D_MAX below. Because the gap depends on alpha alone, the method of moments is closed
 form: solve D(alpha) = v1 - v2, then s^2 = v1 - v1_EP(alpha).
