@@ -36,7 +36,7 @@ class GSaS_Fit:
     SQ2PI = np.sqrt(2*np.pi)
     PEAK_HS = np.array([0.04, 0.06, 0.08, 0.10, 0.12, 0.15, 0.20])   # quantile half-widths for the peak density
     PEAK_WIDEN_HS = np.round(np.arange(0.04, 0.4001, 0.01), 2)       # half-widths searched when the centre dips
-    PEAK_RISE_SE = 2.65    # sd of the relative sparsity rise times sqrt(n), simulated on flat-top laws (EP(4), EP_LNN)
+    PEAK_RISE_SE = 2.65    # sd of the relative sparsity rise times sqrt(n), simulated on flat-top laws (EP(4), LNEP)
     PEAK_DIP_Z = 1.645     # one-sided 5% for the central-dip test
     A3_NORMAL = 2*np.sqrt(2/np.pi)                                    # E|Z|^3 of a standard normal
     A1_NORMAL = np.sqrt(2/np.pi)                                      # E|Z| of a standard normal
