@@ -46,6 +46,12 @@ alpha -> 2, k -> 3 and a power tail of index about 4, while just below it LNEP h
 
 Regimes are numbered 1..N from calm to turbulent (by the sd of their returns).
 
+Simulation. simulate() generates synthetic returns from the fitted model the way a hidden Markov model generates
+data (as Mixture-VAE's generate_hmm_data does): a regime path from the Markov chain with the observed
+transition_matrix(), its first day drawn from the regime weights, then each day's return drawn independently from
+its regime's law (GSaS by GAS_SN with beta = 0, LNEP by LNEP_Fit.rvs_of, or the normal) with the regime's location
+and sd. Within a regime the days are iid, so the persistence comes from the regime path alone.
+
 Usage:
     reg = GSaS_JumpRegimes(xs, n_regimes=2, jump_penalty=50).fit()   # xs: Series of simple returns, dated
     reg.summary()             # DataFrame, one row per regime; drawn_as is 'GSaS', 'LNEP' or 'normal'
@@ -54,12 +60,14 @@ Usage:
     reg.clip_report()         # DataFrame, the share of days each feature is clipped, plus rows 'any feature', 'all values'
     reg.pdf(xg)               # ndarray, the mixture density
     reg.component_pdfs(xg)    # ndarray (len(xg), N), w_j f_j
+    reg.simulate(n, seed)     # DataFrame of n synthetic days (default 10 len(xs)): columns regime, x
 """
 import numpy as np
 import pandas as pd
 from jumpmodels.jump import JumpModel
 from scipy.stats import norm
 
+from .gas_sn_dist import GAS_SN
 from .gsas_fit import GSaS_Fit
 from .lnep_dist import LNEP_Fit
 
@@ -274,3 +282,47 @@ class GSaS_JumpRegimes:
         p = (np.arange(1, len(xs) + 1) - 0.5)/len(xs)
         grid = np.linspace(xs[0] - 0.5*abs(xs[0]), xs[-1] + 0.5*abs(xs[-1]), n_grid)
         return np.interp(p, self.cdf(grid), grid), xs
+
+    # ----------------------------------------------------------------------------------------------------
+    # simulation: the regime path from the Markov chain, the returns from the regime laws
+    # ----------------------------------------------------------------------------------------------------
+    def _regime_rvs(self, j, n, rng):
+        # n draws of regime j (0-based) from the law it is drawn as, with the regime's location and sd
+        if n == 0:
+            return np.empty(0)
+        fam = self._family(j)
+        if fam == 'GSaS':                    # GSaS_Fit's law: mean + sd Z/V standardized; GAS_SN at beta 0 is that law
+            f = self.fits[j]
+            g = GAS_SN(f.alpha, f.k, 0.0)
+            return f.mean + f.sd*g.rvs(n, random_state=rng)/np.sqrt(g.var_by_log_moment())
+        if fam == 'LNEP':
+            m = self.lnep_fits[j]
+            return LNEP_Fit.rvs_of(n, m.alpha, m.s, m.loc, m.sd, rng=rng)
+        x = self.xs.values[self.labels.values == j + 1]
+        return rng.normal(x.mean(), x.std(), n)
+
+    def simulate(self, n=None, seed=0):
+        """
+        Synthetic returns from the fitted regime model, generated as by a hidden Markov model: the regime of day 0
+        is drawn from the regime weights, each next regime from the row of transition_matrix() for today's regime,
+        and each day's return independently from its regime's law (drawn_as: GSaS, LNEP or normal) with the regime's
+        location and sd. n: the number of days, default 10 len(xs). seed: an int or a np.random.Generator. Returns a
+        DataFrame indexed 0..n-1 with columns regime (1..N) and x.
+        """
+        self._require_fit()
+        n = 10*len(self.xs) if n is None else int(n)
+        rng = np.random.default_rng(seed)
+        P = np.nan_to_num(self.transition_matrix().values)    # a row is nan (0/0) for a regime with no exits
+        unseen = P.sum(axis=1) == 0                      # (seen only on the last day): it stays
+        P[unseen] = np.eye(self.n_regimes)[unseen]
+        cum = np.cumsum(P, axis=1)
+        u = rng.random(n)
+        s = np.empty(n, dtype=int)
+        s[0] = rng.choice(self.n_regimes, p=self.weights)
+        for t in range(1, n):
+            s[t] = min(int(np.searchsorted(cum[s[t - 1]], u[t], side='right')), self.n_regimes - 1)
+        x = np.empty(n)
+        for j in range(self.n_regimes):
+            on = s == j
+            x[on] = self._regime_rvs(j, int(on.sum()), rng)
+        return pd.DataFrame({'regime': s + 1, 'x': x})

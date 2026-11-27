@@ -47,3 +47,23 @@ def test_a_flat_top_with_heavy_tails_is_drawn_as_normal_with_the_hidden_regime_n
     assert s.loc[1, 'v2'] < 0 and s.loc[1, 'v1'] - s.loc[1, 'v2'] > 0.2
     assert s.loc[1, 'drawn_as'] == 'normal' and s.loc[1, 'p_lnep'] < 0.05 and s.loc[1, 'lnep_status'] == 'p < 0.05'
     assert 'hides a sharp regime' in s.loc[1, 'note'] and reg.lnep_fits[0] is None
+
+
+def test_simulated_days_follow_the_regime_chain_and_each_regime_law():
+    """simulate() is a hidden Markov model of the fit: the regime path switches at the rates of transition_matrix(),
+    and each regime's days follow the law the mixture uses for it (LNEP through LNEP_Fit.rvs_of, GSaS through
+    GAS_SN at beta = 0, checked against GSaS_Fit's own cdf)."""
+    rng = np.random.default_rng(5)
+    calm = 0.004*lnep.rvs(3.5, 0.25, size=(4, 1500), random_state=rng)
+    wild = 0.02*stats.t.rvs(5, size=(4, 1500), random_state=rng)/np.sqrt(5/3)
+    x = np.concatenate([b for pair in zip(calm, wild) for b in pair])           # 8 alternating blocks, 7 switches
+    reg = GSaS_JumpRegimes(pd.Series(x, index=pd.bdate_range('1990-01-01', periods=len(x))),
+                           n_regimes=2, jump_penalty=200).fit()
+    assert reg.summary().drawn_as.tolist() == ['LNEP', 'GSaS']
+    sim = reg.simulate(n=300_000, seed=1)
+    assert sim.equals(reg.simulate(n=300_000, seed=1))
+    lab = sim.regime.values
+    P_sim = pd.crosstab(lab[:-1], lab[1:], normalize='index').values
+    np.testing.assert_allclose(P_sim, reg.transition_matrix().values, rtol=0.3)   # ~200 switches each way
+    for j, law in [(1, reg.lnep_fits[0]), (2, reg.fits[1])]:
+        assert stats.kstest(sim.x.values[lab == j][:3000], law.cdf).pvalue > 0.01
